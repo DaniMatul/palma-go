@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderItemType {
+  MENU
+  EXTRA
+  CUSTOM
+}
+
+model MenuItem {
+  id             String          @id @default(cuid())
+  name           String
+  description    String
+  price          Decimal
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  dailyMenuItems DailyMenuItem[]
+  orderItems     OrderItem[]
+}
+
+model DailyMenu {
+  id        String          @id @default(cuid())
+  date      DateTime        @unique
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  items     DailyMenuItem[]
+}
+
+model DailyMenuItem {
+  id                String    @id @default(cuid())
+  dailyMenuId       String
+  menuItemId        String
+  availableQuantity Int       @default(0)
+  remainingQuantity Int       @default(0)
+  dailyMenu         DailyMenu @relation(fields: [dailyMenuId], references: [id], onDelete: Cascade)
+  menuItem          MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@unique([dailyMenuId, menuItemId])
+}
+
+model Extra {
+  id         String      @id @default(cuid())
+  name       String
+  price      Decimal
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  orderItems OrderItem[]
+}
+
+model Order {
+  id           String      @id @default(cuid())
+  customerName String
+  address      String
+  createdAt    DateTime    @default(now())
+  promiseTime  DateTime
+  status       OrderStatus @default(IN_PROGRESS)
+  total        Decimal
+  items        OrderItem[]
+}
+
+model OrderItem {
+  id          String        @id @default(cuid())
+  orderId     String
+  type        OrderItemType
+  description String
+  quantity    Int
+  unitPrice   Decimal
+  subtotal    Decimal
+  menuItemId  String?
+  extraId     String?
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem?     @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  extra       Extra?        @relation(fields: [extraId], references: [id], onDelete: Restrict)
+}
