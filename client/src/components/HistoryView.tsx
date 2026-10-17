@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeftRounded, ChevronRightRounded, SearchRounded, Tune, Visibility } from '@mui/icons-material'
-import { Alert, Badge, Box, Button, CircularProgress, Divider, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Pagination, PaginationItem, Paper, Popover, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
+import { Alert, Badge, Box, Button, CircularProgress, Divider, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Pagination, PaginationItem, Paper, Popover, Select, Snackbar, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { DateRange, dateKey, formatHistoryDate, historyCurrency, HistoryOrder, HistoryPeriod, historyTotals, movePeriod, parseDate, periodRange } from '../types/history'
 import { displayOrderNumber, OrderStatus, orderTotal } from '../types/order'
 import { OrderStatusChip } from './OrderStatusChip'
 import { HistoryOrderDialog } from './HistoryOrderDialog'
 import { getOrders } from '../services/orderService'
+import { PeriodSelector } from './PeriodSelector'
 
 const periodOptions = [{ value: 'day', label: 'Día' }, { value: 'week', label: 'Semana' }, { value: 'month', label: 'Mes' }] as const
 const historyGridColumns = '1.1fr 1.6fr 1.2fr 0.8fr 0.9fr 1fr 0.6fr'
-type HistoryFilters = { customer: string; date: string; status: 'all' | OrderStatus; minTotal: string; maxTotal: string }
-const emptyHistoryFilters: HistoryFilters = { customer: '', date: '', status: 'all', minTotal: '', maxTotal: '' }
+type HistoryFilters = { customer: string; status: 'all' | OrderStatus; minTotal: string; maxTotal: string }
+const emptyHistoryFilters: HistoryFilters = { customer: '', status: 'all', minTotal: '', maxTotal: '' }
 
 export function HistoryView() {
   const [orders, setOrders] = useState<HistoryOrder[]>([])
@@ -57,7 +58,6 @@ export function HistoryView() {
       const min = filters.minTotal === '' ? null : Number(filters.minTotal)
       const max = filters.maxTotal === '' ? null : Number(filters.maxTotal)
       return (!customer || order.customerName.toLocaleLowerCase('es').includes(customer))
-        && (!filters.date || order.date === filters.date)
         && (filters.status === 'all' || order.status === filters.status)
         && (min === null || total >= min)
         && (max === null || total <= max)
@@ -94,9 +94,7 @@ export function HistoryView() {
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 7fr) minmax(280px, 3fr)' }, gap: 3, alignItems: 'stretch' }}>
       <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
         <Stack spacing={2.5}>
-          <ToggleButtonGroup exclusive value={period === 'custom' ? null : period} onChange={(_, value: Exclude<HistoryPeriod, 'custom'> | null) => { if (value) { setPeriod(value); setPage(1); setError('') } }} aria-label="Periodo del historial">
-            {periodOptions.map((option) => <ToggleButton key={option.value} value={option.value}>{option.label}</ToggleButton>)}
-          </ToggleButtonGroup>
+          <PeriodSelector value={period === 'custom' ? null : period} onChange={(value) => { setPeriod(value as Exclude<HistoryPeriod, 'custom'>); setPage(1); setError('') }} label="Periodo del historial" options={[...periodOptions]} />
           <Stack direction="row" alignItems="center" gap={1}>
             <IconButton size="large" aria-label="Periodo anterior" onClick={() => navigate(-1)} disabled={period === 'custom'}><ChevronLeftRounded /></IconButton>
             <Typography sx={{ textAlign: 'center', fontWeight: 600, flex: 1, textTransform: 'capitalize' }}>{period === 'custom' ? customLabel : periodLabel}</Typography>
@@ -140,7 +138,6 @@ export function HistoryView() {
         <Stack spacing={1.5} sx={{ width: { xs: 300, sm: 360 }, maxWidth: 'calc(100vw - 32px)', p: 2.5 }}>
           <Typography fontWeight={800}>Filtros</Typography>
           <TextField size="small" label="Cliente" value={draftFilters.customer} onChange={(event) => setDraftFilters({ ...draftFilters, customer: event.target.value })} fullWidth />
-          <TextField size="small" label="Fecha" type="date" value={draftFilters.date} onChange={(event) => setDraftFilters({ ...draftFilters, date: event.target.value })} InputLabelProps={{ shrink: true }} fullWidth />
           <FormControl size="small" fullWidth>
             <InputLabel id="history-status-filter-label">Estado</InputLabel>
             <Select labelId="history-status-filter-label" label="Estado" value={draftFilters.status} onChange={(event) => setDraftFilters({ ...draftFilters, status: event.target.value as HistoryFilters['status'] })}>

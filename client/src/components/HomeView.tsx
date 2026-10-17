@@ -1,9 +1,10 @@
-import { Alert, Box, CircularProgress, Divider, Grid, Paper, Snackbar, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
-import { PointOfSale, DateRange, CalendarMonth, EventNote } from '@mui/icons-material'
+import { Alert, Box, CircularProgress, Divider, Grid, Paper, Snackbar, Stack, Typography } from '@mui/material'
+import { PaymentsOutlined, ViewWeekOutlined, CalendarViewMonthOutlined, TimelineOutlined } from '@mui/icons-material'
 import { ReactNode, useEffect, useState } from 'react'
 import { DashboardData } from '../types/dashboard'
 import { getDashboard } from '../services/dashboardService'
 import { SalesByDayChart } from './SalesByDayChart'
+import { PeriodSelector } from './PeriodSelector'
 
 type SalesPeriod = 'week' | 'month'
 type BestSellingPeriod = 'day' | 'month' | 'year'
@@ -14,20 +15,12 @@ function MetricRow({ label, value, icon, status }: { label: string; value: strin
   return (
     <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} sx={{ py: 2 }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
-        <Box aria-hidden sx={{ display: 'flex', alignItems: 'center', color: '#6269B8', flexShrink: 0, '& svg': { fontSize: 21 } }}>{icon}</Box>
+        <Box aria-hidden sx={{ display: 'flex', alignItems: 'center', color: '#7C82C9', flexShrink: 0, '& svg': { fontSize: 21 } }}>{icon}</Box>
         {status && <Box aria-hidden sx={(theme) => ({ flexShrink: 0, width: 12, height: 12, borderRadius: '50%', bgcolor: theme.palette.status[status].background, border: `1px solid ${theme.palette.status[status].border}` })} />}
         <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'normal' }}>{label}</Typography>
       </Stack>
       <Typography color="text.primary" sx={{ fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{value}</Typography>
     </Stack>
-  )
-}
-
-function PeriodSelector({ value, options, onChange, label }: { value: string; options: { value: string; label: string }[]; onChange: (value: string) => void; label: string }) {
-  return (
-    <ToggleButtonGroup value={value} exclusive onChange={(_, nextValue: string | null) => nextValue && onChange(nextValue)} size="small" aria-label={label}>
-      {options.map((option) => <ToggleButton key={option.value} value={option.value}>{option.label}</ToggleButton>)}
-    </ToggleButtonGroup>
   )
 }
 
@@ -84,10 +77,10 @@ export function HomeView() {
       <Paper variant="outlined" sx={{ gridColumn: { xs: '1', lg: '2' }, gridRow: { xs: 'auto', lg: '1' }, p: { xs: 2, sm: 3 }, borderRadius: 2.75, height: '100%' }}>
         <Typography variant="h6" sx={{ fontWeight: 800, mb: 2 }}>Resumen</Typography>
         <Stack divider={<Divider sx={{ opacity: 0.65 }} />}>
-          <MetricRow icon={<PointOfSale />} label="Ventas hoy" value={formatCurrency(data.summary.today)} />
-          <MetricRow icon={<DateRange />} label="Esta semana" value={formatCurrency(data.summary.week)} />
-          <MetricRow icon={<CalendarMonth />} label="Este mes" value={formatCurrency(data.summary.month)} />
-          <MetricRow icon={<EventNote />} label="Este año" value={formatCurrency(data.summary.year)} />
+          <MetricRow icon={<PaymentsOutlined />} label="Ventas hoy" value={formatCurrency(data.summary.today)} />
+          <MetricRow icon={<ViewWeekOutlined />} label="Esta semana" value={formatCurrency(data.summary.week)} />
+          <MetricRow icon={<CalendarViewMonthOutlined />} label="Este mes" value={formatCurrency(data.summary.month)} />
+          <MetricRow icon={<TimelineOutlined />} label="Este año" value={formatCurrency(data.summary.year)} />
         </Stack>
       </Paper>
       <Box sx={{ gridColumn: '1 / -1', gridRow: { xs: 'auto', lg: '2' }, minWidth: 0, height: '100%' }}>

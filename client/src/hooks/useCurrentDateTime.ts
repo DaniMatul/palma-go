@@ -9,7 +9,6 @@ export function useCurrentDateTime() {
   }, [])
 
   return {
-    time: currentDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
     date: `${['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][currentDate.getDay()]}, ${currentDate.getDate()} ${currentDate.toLocaleDateString('es-GT', { month: 'short' }).replace('.', '')}`,
   }
 }
