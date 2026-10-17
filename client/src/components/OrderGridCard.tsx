@@ -1,5 +1,5 @@
 import { Card, CardActionArea, Stack, Typography } from '@mui/material'
-import { Order, orderTotal } from '../types/order'
+import { displayOrderNumber, Order, orderTotal } from '../types/order'
 import { OrderStatusChip } from './OrderStatusChip'
 
 type OrderGridCardProps = { order: Order; selected: boolean; onSelect: () => void }
@@ -11,7 +11,7 @@ export function OrderGridCard({ order, selected, onSelect }: OrderGridCardProps)
       <CardActionArea onClick={onSelect} sx={{ height: '100%', p: 2.25 }}>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-            <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 800 }}>Pedido {order.id}</Typography>
+            <Typography variant="h6" sx={{ fontSize: '1.1rem', fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
           </Stack>
           <Typography sx={{ fontWeight: 700 }}>{order.customerName}</Typography>
           <Stack spacing={0.4} sx={{ flex: 1 }}>

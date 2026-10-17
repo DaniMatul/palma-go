@@ -1,17 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeftRounded, ChevronRightRounded, SearchRounded, Tune, Visibility } from '@mui/icons-material'
-import { Alert, Badge, Box, Button, Divider, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Pagination, PaginationItem, Paper, Popover, Select, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
+import { Alert, Badge, Box, Button, CircularProgress, Divider, FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Pagination, PaginationItem, Paper, Popover, Select, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
 import { DateRange, dateKey, formatHistoryDate, historyCurrency, HistoryOrder, HistoryPeriod, historyTotals, movePeriod, parseDate, periodRange } from '../types/history'
-import { OrderStatus, orderTotal } from '../types/order'
+import { displayOrderNumber, OrderStatus, orderTotal } from '../types/order'
 import { OrderStatusChip } from './OrderStatusChip'
 import { HistoryOrderDialog } from './HistoryOrderDialog'
+import { getOrders } from '../services/orderService'
 
 const periodOptions = [{ value: 'day', label: 'Día' }, { value: 'week', label: 'Semana' }, { value: 'month', label: 'Mes' }] as const
 const historyGridColumns = '1.1fr 1.6fr 1.2fr 0.8fr 0.9fr 1fr 0.6fr'
 type HistoryFilters = { customer: string; date: string; status: 'all' | OrderStatus; minTotal: string; maxTotal: string }
 const emptyHistoryFilters: HistoryFilters = { customer: '', date: '', status: 'all', minTotal: '', maxTotal: '' }
 
-export function HistoryView({ orders }: { orders: HistoryOrder[] }) {
+export function HistoryView() {
+  const [orders, setOrders] = useState<HistoryOrder[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [period, setPeriod] = useState<HistoryPeriod>('day')
   const [anchor, setAnchor] = useState(() => dateKey(new Date()))
   const [custom, setCustom] = useState<DateRange>({ start: anchor, end: anchor })
@@ -26,11 +30,27 @@ export function HistoryView({ orders }: { orders: HistoryOrder[] }) {
   const [filterError, setFilterError] = useState('')
 
   const range = period === 'custom' ? custom : periodRange(anchor, period)
-  const periodOrders = orders.filter((order) => order.date >= range.start && order.date <= range.end)
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    getOrders({ from: range.start, to: range.end })
+      .then((loadedOrders) => {
+        if (!cancelled) setOrders(loadedOrders)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('No se pudo cargar el historial.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [range.start, range.end])
+
+  const periodOrders = orders
   const totals = historyTotals(periodOrders)
   const query = search.trim().toLocaleLowerCase('es')
   const filtered = periodOrders
-    .filter((order) => `${order.id} ${order.customerName}`.toLocaleLowerCase('es').includes(query))
+    .filter((order) => `${displayOrderNumber(order)} ${order.customerName}`.toLocaleLowerCase('es').includes(query))
     .filter((order) => {
       const customer = filters.customer.trim().toLocaleLowerCase('es')
       const total = orderTotal(order)
@@ -145,15 +165,16 @@ export function HistoryView({ orders }: { orders: HistoryOrder[] }) {
       <Box sx={{ display: { xs: 'none', md: 'grid' }, gridTemplateColumns: historyGridColumns, gap: 2, px: 3, py: 1.5, alignItems: 'center', bgcolor: 'background.secondary' }}>
         {['Pedido', 'Cliente', 'Fecha', 'Hora', 'Total', 'Estado', 'Acción'].map((heading) => <Typography key={heading} variant="caption" color="text.secondary" fontWeight={700} sx={{ textAlign: 'center' }}>{heading}</Typography>)}
       </Box>
-      {visible.map((order) => <Box key={order.id} component="div" role="button" tabIndex={0} onClick={() => setSelected(order)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(order) } }} aria-label={`Ver detalle ${order.id}`} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr auto', md: historyGridColumns }, width: '100%', gap: 2, px: { xs: 2, sm: 3 }, py: 1.5, alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 0 }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 }, cursor: 'pointer' }}>
-        <Typography fontWeight={600} sx={{ textAlign: 'left' }}>Pedido {order.id}</Typography><Typography sx={{ textAlign: 'left', minWidth: 0 }}>{order.customerName}</Typography><Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{formatHistoryDate(order.date)}</Typography><Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>{order.createdAt}</Typography><Typography fontWeight={600} sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{historyCurrency(orderTotal(order))}</Typography><Box sx={{ display: 'flex', justifyContent: 'center' }}><OrderStatusChip status={order.status} /></Box><Tooltip title="Ver detalle"><IconButton aria-label={`Ver detalle ${order.id}`} onClick={(event) => { event.stopPropagation(); setSelected(order) }} sx={{ gridColumn: { xs: '1 / -1', md: 'auto' }, justifySelf: { xs: 'center', md: 'center' }, width: 30, height: 30, color: 'rgba(98, 105, 184, 0.65)', bgcolor: 'rgba(98, 105, 184, 0.05)', borderRadius: '50%', boxShadow: 'none', '&:hover': { bgcolor: 'rgba(98, 105, 184, 0.10)' } }}><Visibility sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+      {loading ? <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 180 }}><CircularProgress color="primary" /></Box> : visible.map((order) => <Box key={order.id} component="div" role="button" tabIndex={0} onClick={() => setSelected(order)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(order) } }} aria-label={`Ver detalle ${displayOrderNumber(order)}`} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr auto', md: historyGridColumns }, width: '100%', gap: 2, px: { xs: 2, sm: 3 }, py: 1.5, alignItems: 'center', borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 0 }, '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 }, cursor: 'pointer' }}>
+        <Typography fontWeight={600} sx={{ textAlign: 'left' }}>Pedido {displayOrderNumber(order)}</Typography><Typography sx={{ textAlign: 'left', minWidth: 0 }}>{order.customerName}</Typography><Typography variant="body2" color="text.secondary" sx={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{formatHistoryDate(order.date)}</Typography><Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>{order.createdAt}</Typography><Typography fontWeight={600} sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{historyCurrency(orderTotal(order))}</Typography><Box sx={{ display: 'flex', justifyContent: 'center' }}><OrderStatusChip status={order.status} /></Box><Tooltip title="Ver detalle"><IconButton aria-label={`Ver detalle ${displayOrderNumber(order)}`} onClick={(event) => { event.stopPropagation(); setSelected(order) }} sx={{ gridColumn: { xs: '1 / -1', md: 'auto' }, justifySelf: { xs: 'center', md: 'center' }, width: 30, height: 30, color: 'rgba(98, 105, 184, 0.65)', bgcolor: 'rgba(98, 105, 184, 0.05)', borderRadius: '50%', boxShadow: 'none', '&:hover': { bgcolor: 'rgba(98, 105, 184, 0.10)' } }}><Visibility sx={{ fontSize: 17 }} /></IconButton></Tooltip>
       </Box>)}
-      {!visible.length && <Typography sx={{ p: 4, textAlign: 'center' }} color="text.secondary">No se encontraron pedidos.</Typography>}
+      {!loading && !visible.length && <Typography sx={{ p: 4, textAlign: 'center' }} color="text.secondary">{periodOrders.length ? 'No se encontraron pedidos.' : 'No hay pedidos registrados para este período.'}</Typography>}
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems="center" gap={2} sx={{ p: { xs: 2, sm: 3 } }}>
         <Typography variant="body2" color="text.secondary">Mostrando {filtered.length ? (currentPage - 1) * 20 + 1 : 0}–{Math.min(currentPage * 20, filtered.length)} de {filtered.length} ventas</Typography>
         <Pagination count={pages} page={currentPage} onChange={(_, value) => setPage(value)} siblingCount={0} color="primary" renderItem={(item) => <PaginationItem {...item} slots={{ previous: () => <span>Anterior</span>, next: () => <span>Siguiente</span> }} sx={{ minHeight: 44 }} />} />
       </Stack>
     </Paper>
     <HistoryOrderDialog order={selected} onClose={() => setSelected(null)} />
+    <Snackbar open={Boolean(loadError)} autoHideDuration={5000} onClose={() => setLoadError('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}><Alert severity="error" onClose={() => setLoadError('')} sx={{ width: '100%' }}>{loadError}</Alert></Snackbar>
   </Stack>
 }

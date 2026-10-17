@@ -1,5 +1,5 @@
 import { Box, Card, CardActionArea, Stack, Typography } from '@mui/material'
-import { Order, orderTotal } from '../types/order'
+import { displayOrderNumber, Order, orderTotal } from '../types/order'
 import { OrderStatusChip } from './OrderStatusChip'
 
 type OrderCardProps = { order: Order; selected: boolean; onSelect: () => void }
@@ -11,7 +11,7 @@ export function OrderCard({ order, selected, onSelect }: OrderCardProps) {
       <CardActionArea onClick={onSelect} sx={{ p: { xs: 2, md: 2.5 } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
           <Box>
-            <Typography variant="h6" sx={{ fontSize: { xs: '1.05rem', md: '1.2rem' }, fontWeight: 800 }}>Pedido {order.id}</Typography>
+            <Typography variant="h6" sx={{ fontSize: { xs: '1.05rem', md: '1.2rem' }, fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{order.customerName}</Typography>
             <Typography variant="body2" color="text.secondary">{order.createdAt} · Promesa {order.promiseTime}</Typography>
             <Typography variant="body2" color="text.secondary">{totalItems} {totalItems === 1 ? 'producto' : 'productos'}</Typography>

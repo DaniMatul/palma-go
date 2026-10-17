@@ -7,6 +7,47 @@ export type MenuProduct = {
   availableToday: boolean
 }
 
+export type MenuItem = {
+  id: string
+  name: string
+  description: string
+  price: number
+  active: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type MenuItemInput = Pick<MenuItem, 'name' | 'description' | 'price'>
+
+export type Extra = {
+  id: string
+  name: string
+  price: number
+  active: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type ExtraInput = Pick<Extra, 'name' | 'price'> & { active?: boolean }
+
+export type DailyMenuItem = {
+  id: string
+  menuItemId: string
+  name: string
+  description: string
+  price: number
+  availableQuantity: number
+  remainingQuantity: number
+}
+
+export type DailyMenu = {
+  id: string | null
+  date: string
+  createdAt: string | null
+  updatedAt: string | null
+  items: DailyMenuItem[]
+}
+
 export type OrderLine = {
   id: string
   name: string

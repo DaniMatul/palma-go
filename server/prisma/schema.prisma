@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -63,6 +64,8 @@ model Extra {
 
 model Order {
   id           String      @id @default(cuid())
+  dailyNumber  Int
+  orderDate    DateTime
   customerName String
   address      String
   createdAt    DateTime    @default(now())
@@ -70,6 +73,8 @@ model Order {
   status       OrderStatus @default(IN_PROGRESS)
   total        Decimal
   items        OrderItem[]
+
+  @@unique([orderDate, dailyNumber])
 }
 
 model OrderItem {

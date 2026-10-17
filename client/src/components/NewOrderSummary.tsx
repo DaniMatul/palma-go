@@ -1,5 +1,5 @@
 import { AccessTimeRounded, CheckCircleRounded } from '@mui/icons-material'
-import { Alert, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
 import { OrderLine } from '../types/menu'
 
 type NewOrderSummaryProps = {
@@ -7,10 +7,10 @@ type NewOrderSummaryProps = {
   createdAt: string
   promiseTime: string
   onCreate: () => void
-  successMessage: string
+  loading?: boolean
 }
 
-export function NewOrderSummary({ items, createdAt, promiseTime, onCreate, successMessage }: NewOrderSummaryProps) {
+export function NewOrderSummary({ items, createdAt, promiseTime, onCreate, loading = false }: NewOrderSummaryProps) {
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
   return (
@@ -26,8 +26,7 @@ export function NewOrderSummary({ items, createdAt, promiseTime, onCreate, succe
         <Stack direction="row" justifyContent="space-between" alignItems="center"><Stack direction="row" alignItems="center" gap={1}><AccessTimeRounded fontSize="small" color="action" /><Typography color="text.secondary">Hora promesa</Typography></Stack><Typography sx={{ fontWeight: 700 }}>{promiseTime}</Typography></Stack>
       </Stack>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>Total</Typography><Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>Q{total}</Typography></Stack>
-      <Button fullWidth size="large" variant="contained" startIcon={<CheckCircleRounded />} onClick={onCreate} disabled={items.length === 0} sx={{ minHeight: 54, fontWeight: 800 }}>Crear pedido</Button>
-      {successMessage && <Alert severity="success" sx={{ mt: 2 }}>{successMessage}</Alert>}
+      <Button fullWidth size="large" variant="contained" startIcon={<CheckCircleRounded />} onClick={onCreate} disabled={loading} sx={{ minHeight: 54, fontWeight: 800 }}>{loading ? 'Creando...' : 'Crear pedido'}</Button>
     </Paper>
   )
 }

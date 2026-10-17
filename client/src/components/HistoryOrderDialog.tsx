@@ -1,12 +1,12 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material'
 import { formatHistoryDate, historyCurrency, HistoryOrder } from '../types/history'
-import { orderTotal } from '../types/order'
+import { displayOrderNumber, orderTotal } from '../types/order'
 import { OrderStatusChip } from './OrderStatusChip'
 
 export function HistoryOrderDialog({ order, onClose }: { order: HistoryOrder | null; onClose: () => void }) {
   return <Dialog open={Boolean(order)} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="history-detail-title">
     {order && <>
-      <DialogTitle id="history-detail-title">Pedido {order.id}</DialogTitle>
+      <DialogTitle id="history-detail-title">Pedido {displayOrderNumber(order)}</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
           <OrderStatusChip status={order.status} />

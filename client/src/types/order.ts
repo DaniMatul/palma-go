@@ -8,12 +8,19 @@ export type OrderItem = {
 
 export type Order = {
   id: string
+  dailyNumber?: number
+  displayNumber?: string
+  date: string
   customerName: string
   address: string
   createdAt: string
   promiseTime: string
   status: OrderStatus
   items: OrderItem[]
+}
+
+export function displayOrderNumber(order: Pick<Order, 'id' | 'displayNumber'>) {
+  return order.displayNumber ?? order.id
 }
 
 export function addMinutesToTime(time: string, minutes: number) {

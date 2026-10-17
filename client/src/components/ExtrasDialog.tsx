@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AddRounded, RemoveRounded } from '@mui/icons-material'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material'
-import { ExtraProduct, OrderLine } from '../types/menu'
+import { Extra, OrderLine } from '../types/menu'
 
-type ExtrasDialogProps = { open: boolean; extras: ExtraProduct[]; onClose: () => void; onConfirm: (items: OrderLine[]) => void }
+type ExtrasDialogProps = { open: boolean; extras: Extra[]; onClose: () => void; onConfirm: (items: OrderLine[]) => void }
 
 export function ExtrasDialog({ open, extras, onClose, onConfirm }: ExtrasDialogProps) {
   const [quantities, setQuantities] = useState<Record<string, number>>({})

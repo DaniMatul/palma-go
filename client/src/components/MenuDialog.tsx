@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField } from '@mui/material'
-import { MenuProduct } from '../types/menu'
+import { MenuItem, MenuItemInput } from '../types/menu'
 
-type MenuDialogProps = { open: boolean; menu: MenuProduct | null; onClose: () => void; onSave: (menu: MenuProduct) => void }
+type MenuDialogProps = { open: boolean; menu: MenuItem | null; onClose: () => void; onSave: (menu: MenuItemInput & { id?: string; active: boolean }) => void }
 
 export function MenuDialog({ open, menu, onClose, onSave }: MenuDialogProps) {
   const [name, setName] = useState('')
@@ -24,7 +24,7 @@ export function MenuDialog({ open, menu, onClose, onSave }: MenuDialogProps) {
   const handleSave = () => {
     setSubmitted(true)
     if (!name.trim() || numericPrice <= 0 || Number.isNaN(numericPrice)) return
-    onSave({ id: menu?.id ?? `menu-${Date.now()}`, name: name.trim(), description: description.trim(), price: numericPrice, availableQuantity: menu?.availableQuantity ?? 0, availableToday: menu?.availableToday ?? false })
+    onSave({ id: menu?.id, name: name.trim(), description: description.trim(), price: numericPrice, active: menu?.active ?? true })
   }
 
   return (

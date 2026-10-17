@@ -1,16 +1,17 @@
 import { AddRounded, RemoveRounded } from '@mui/icons-material'
 import { Box, Card, IconButton, Stack, Typography } from '@mui/material'
-import { MenuProduct } from '../types/menu'
+import { DailyMenuItem, MenuProduct } from '../types/menu'
 
 type ProductCardProps = {
-  product: MenuProduct
+  product: MenuProduct | DailyMenuItem
   quantity: number
   onIncrease: () => void
   onDecrease: () => void
 }
 
 export function ProductCard({ product, quantity, onIncrease, onDecrease }: ProductCardProps) {
-  const remaining = Math.max(0, product.availableQuantity - quantity)
+  const availableQuantity = 'remainingQuantity' in product ? product.remainingQuantity : product.availableQuantity
+  const remaining = Math.max(0, availableQuantity - quantity)
   return (
     <Card elevation={0} sx={{ border: '1px solid', borderColor: quantity > 0 ? 'selection.border' : 'divider', bgcolor: quantity > 0 ? 'selection.background' : 'background.paper', p: { xs: 2, md: 2.25 } }}>
       <Stack spacing={2}>
@@ -25,7 +26,7 @@ export function ProductCard({ product, quantity, onIncrease, onDecrease }: Produ
             <RemoveRounded />
           </IconButton>
           <Typography sx={{ minWidth: 28, textAlign: 'center', fontSize: '1.3rem', fontWeight: 800 }}>{quantity}</Typography>
-          <IconButton aria-label={`Agregar ${product.name}`} onClick={onIncrease} disabled={quantity >= product.availableQuantity} size="large" sx={{ width: 52, height: 52, bgcolor: 'primary.main', color: 'common.white', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground' } }}>
+          <IconButton aria-label={`Agregar ${product.name}`} onClick={onIncrease} disabled={quantity >= availableQuantity} size="large" sx={{ width: 52, height: 52, bgcolor: 'primary.main', color: 'common.white', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'action.disabledBackground' } }}>
             <AddRounded />
           </IconButton>
         </Stack>

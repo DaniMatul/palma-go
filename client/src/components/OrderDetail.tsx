@@ -1,6 +1,6 @@
 import { CancelOutlined, CheckCircleRounded, CloseRounded, ReceiptLongRounded, ReplayRounded } from '@mui/icons-material'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper, Stack, Typography } from '@mui/material'
-import { Order, orderTotal } from '../types/order'
+import { displayOrderNumber, Order, orderTotal } from '../types/order'
 import { useState } from 'react'
 
 type OrderDetailProps = { order: Order | undefined; onComplete: () => void; onReopen: () => void; onCancel: () => void }
@@ -13,7 +13,7 @@ export function OrderDetail({ order, onComplete, onReopen, onCancel }: OrderDeta
     <Paper component="section" aria-labelledby="order-detail-title" elevation={0} sx={{ p: { xs: 2.5, md: 3 }, border: '1px solid', borderColor: 'divider', borderRadius: 3, position: { lg: 'sticky' }, top: { lg: 24 } }}>
       <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 3 }}>
         <Box sx={{ display: 'grid', placeItems: 'center', width: 44, height: 44, bgcolor: 'secondary.light', color: 'secondary.main', borderRadius: 2 }}><ReceiptLongRounded /></Box>
-        <Box><Typography id="order-detail-title" variant="h5" sx={{ fontWeight: 800 }}>Pedido {order.id}</Typography><Typography variant="body2" color="text.secondary">Información del pedido</Typography></Box>
+        <Box><Typography id="order-detail-title" variant="h5" sx={{ fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography><Typography variant="body2" color="text.secondary">Información del pedido</Typography></Box>
       </Stack>
       <Stack spacing={1} sx={{ mb: 3 }}>
         <Typography><strong>Cliente:</strong> {order.customerName}</Typography>

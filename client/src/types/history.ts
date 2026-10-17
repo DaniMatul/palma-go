@@ -35,5 +35,5 @@ export function movePeriod(anchor: string, period: HistoryPeriod, direction: num
 export function historyTotals(orders: HistoryOrder[]) {
   const completed = orders.filter((order) => order.status === 'completed')
   const sold = completed.reduce((sum, order) => sum + orderTotal(order), 0)
-  return { sold, count: orders.length, average: completed.length ? sold / completed.length : 0 }
+  return { sold, count: completed.length, average: completed.length ? sold / completed.length : 0 }
 }
