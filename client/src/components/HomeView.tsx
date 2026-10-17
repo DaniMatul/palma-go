@@ -1,10 +1,10 @@
-import { Box, Divider, Grid, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Alert, Box, CircularProgress, Divider, Grid, Paper, Snackbar, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { PointOfSale, DateRange, CalendarMonth, EventNote } from '@mui/icons-material'
-import { ReactNode, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { DashboardData } from '../types/dashboard'
+import { getDashboard } from '../services/dashboardService'
 import { SalesByDayChart } from './SalesByDayChart'
 
-type HomeViewProps = { data: DashboardData }
 type SalesPeriod = 'week' | 'month'
 type BestSellingPeriod = 'day' | 'month' | 'year'
 
@@ -31,9 +31,30 @@ function PeriodSelector({ value, options, onChange, label }: { value: string; op
   )
 }
 
-export function HomeView({ data }: HomeViewProps) {
+const emptyDashboard: DashboardData = {
+  sales: { week: { total: 0, points: [] }, month: { total: 0, points: [] } },
+  bestSelling: { day: [], month: [], year: [] },
+  summary: { today: 0, week: 0, month: 0, year: 0 },
+  operation: { orders: 0, completedSales: 0, completedOrders: 0, inProgress: 0, cancelled: 0 },
+}
+
+export function HomeView() {
   const [salesPeriod, setSalesPeriod] = useState<SalesPeriod>('week')
   const [bestSellingPeriod, setBestSellingPeriod] = useState<BestSellingPeriod>('day')
+  const [data, setData] = useState<DashboardData>(emptyDashboard)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    void getDashboard(bestSellingPeriod, salesPeriod)
+      .then((nextData) => { if (!cancelled) setData(nextData) })
+      .catch(() => { if (!cancelled) setError('No se pudo cargar el resumen.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [bestSellingPeriod, salesPeriod])
+
   const sales = data.sales[salesPeriod]
   const bestSelling = data.bestSelling[bestSellingPeriod]
 
@@ -47,7 +68,7 @@ export function HomeView({ data }: HomeViewProps) {
           </Box>
           <PeriodSelector value={bestSellingPeriod} onChange={(value) => setBestSellingPeriod(value as BestSellingPeriod)} label="Periodo de más vendidos" options={[{ value: 'day', label: 'Día' }, { value: 'month', label: 'Mes' }, { value: 'year', label: 'Año' }]} />
         </Stack>
-        <Grid container spacing={1.5}>
+        {loading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={24} /></Box> : bestSelling.length === 0 ? <Typography color="text.secondary" sx={{ py: 3 }}>No hay ventas registradas en este período.</Typography> : <Grid container spacing={1.5}>
           {bestSelling.slice(0, 4).map((product) => (
             <Grid item xs={12} sm={6} key={product.name}>
               <Box sx={{ p: 1.75, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
@@ -57,7 +78,7 @@ export function HomeView({ data }: HomeViewProps) {
               </Box>
             </Grid>
           ))}
-        </Grid>
+        </Grid>}
       </Paper>
 
       <Paper variant="outlined" sx={{ gridColumn: { xs: '1', lg: '2' }, gridRow: { xs: 'auto', lg: '1' }, p: { xs: 2, sm: 3 }, borderRadius: 2.75, height: '100%' }}>
@@ -72,6 +93,9 @@ export function HomeView({ data }: HomeViewProps) {
       <Box sx={{ gridColumn: '1 / -1', gridRow: { xs: 'auto', lg: '2' }, minWidth: 0, height: '100%' }}>
         <SalesByDayChart data={sales.points} total={sales.total} period={salesPeriod} onPeriodChange={(value) => setSalesPeriod(value as SalesPeriod)} />
       </Box>
+      <Snackbar open={Boolean(error)} autoHideDuration={5000} onClose={() => setError('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+        <Alert severity="error" onClose={() => setError('')}>{error}</Alert>
+      </Snackbar>
     </Box>
   )
 }

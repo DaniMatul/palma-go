@@ -8,7 +8,6 @@ import { HistoryView } from './components/HistoryView'
 import { OrdersList } from './components/OrdersList'
 import { Sidebar, SidebarSection } from './components/Sidebar'
 import { Order, OrderStatus } from './types/order'
-import { dashboardData } from './data/dashboardData'
 import { getOrders, updateOrderStatus } from './services/orderService'
 
 function App() {
@@ -85,7 +84,7 @@ function App() {
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: { xs: 'column', md: 'row' }, bgcolor: 'background.default' }}>
       <Sidebar activeSection={activeSection} onNavigate={handleNavigate} />
       <Box component="main" sx={{ flex: 1, minWidth: 0, p: { xs: 2, sm: 3, lg: 4 } }}>
-        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView data={dashboardData} /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? <MenuManagementView /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
+        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? <MenuManagementView /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
           {ordersError && <Alert severity="error" onClose={() => setOrdersError('')} sx={{ mb: 2 }}>{ordersError}</Alert>}
           <Grid container spacing={{ xs: 3, lg: 4 }}>
           <Grid item xs={12} lg={8}>
