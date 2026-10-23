@@ -15,6 +15,7 @@ export type CreateOrderInput = {
   customerName: string
   address: string
   items: CreateOrderItemInput[]
+  promiseTime?: Date
 }
 
 export type ListOrdersFilters = {
@@ -22,6 +23,7 @@ export type ListOrdersFilters = {
   to?: Date
   status?: OrderStatus
   search?: string
+  activeOnly?: boolean
 }
 
 export class OrderValidationError extends Error {
@@ -66,6 +68,13 @@ export class OrderNumberConflictError extends Error {
   }
 }
 
+export class ActiveDailyMenuNotFoundError extends Error {
+  constructor() {
+    super('No existe un menú del día activo. Crea primero un menú del día.')
+    this.name = 'ActiveDailyMenuNotFoundError'
+  }
+}
+
 const orderInclude = { items: true } satisfies Prisma.OrderInclude
 
 export function formatOrderNumber(dailyNumber: number) {
@@ -81,16 +90,17 @@ async function createOrderTransaction(input: CreateOrderInput) {
   if (!businessDate) throw new OrderValidationError('No se pudo determinar la fecha actual')
 
   return prisma.$transaction(async (transaction) => {
-    const dailyMenu = await transaction.dailyMenu.findUnique({
-      where: { date: businessDate },
-      include: { items: { include: { menuItem: true } } },
+    const dailyMenu = await transaction.dailyMenu.findFirst({
+      where: { date: businessDate, status: 'ACTIVE' },
+      include: { items: { where: { active: true }, include: { menuItem: true } } },
     })
+    if (!dailyMenu) throw new ActiveDailyMenuNotFoundError()
     const dailyItemsByMenuId = new Map(dailyMenu?.items.map((item) => [item.menuItemId, item]) ?? [])
     const extraIds = [...new Set(input.items.filter((item) => item.type === OrderItemType.EXTRA).map((item) => item.extraId).filter((id): id is string => Boolean(id)))]
     const extras = await transaction.extra.findMany({ where: { id: { in: extraIds }, active: true } })
     const extrasById = new Map(extras.map((extra) => [extra.id, extra]))
     const menuQuantities = new Map<string, number>()
-    const orderItems: Array<{ type: OrderItemType; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuItemId?: string; extraId?: string }> = []
+    const orderItems: Array<{ type: OrderItemType; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuItemId?: string; extraId?: string; dailyMenuItemId?: string }> = []
 
     for (const item of input.items) {
       if (item.type === OrderItemType.MENU) {
@@ -98,8 +108,8 @@ async function createOrderTransaction(input: CreateOrderInput) {
         const dailyItem = dailyItemsByMenuId.get(item.menuItemId)
         if (!dailyItem) throw new OrderItemNotFoundError('El menú no está disponible en el menú del día actual')
         menuQuantities.set(item.menuItemId, (menuQuantities.get(item.menuItemId) ?? 0) + item.quantity)
-        const unitPrice = new Prisma.Decimal(dailyItem.menuItem.price)
-        orderItems.push({ type: item.type, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuItemId: item.menuItemId })
+        const unitPrice = new Prisma.Decimal(dailyItem.price)
+        orderItems.push({ type: item.type, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuItemId: item.menuItemId, dailyMenuItemId: dailyItem.id })
       } else if (item.type === OrderItemType.EXTRA) {
         if (!item.extraId) throw new OrderValidationError('extraId es obligatorio para items EXTRA')
         const extra = extrasById.get(item.extraId)
@@ -122,14 +132,21 @@ async function createOrderTransaction(input: CreateOrderInput) {
       if (!dailyItem) throw new OrderItemNotFoundError('El menú no está disponible en el menú del día actual')
       const updated = await transaction.dailyMenuItem.updateMany({ where: { id: dailyItem.id, remainingQuantity: { gte: quantity } }, data: { remainingQuantity: { decrement: quantity } } })
       if (updated.count !== 1) throw new OrderAvailabilityError(`No hay suficientes unidades disponibles para ${dailyItem.menuItem.name}`)
+      const menuSubtotal = orderItems
+        .filter((item) => item.dailyMenuItemId === dailyItem.id)
+        .reduce((sum, item) => sum.add(item.subtotal), new Prisma.Decimal(0))
+      if (!menuSubtotal.isZero()) {
+        await transaction.dailyMenuItem.update({ where: { id: dailyItem.id }, data: { soldQuantity: { increment: quantity }, revenue: { increment: menuSubtotal } } })
+      }
     }
 
     const total = orderItems.reduce((sum, item) => sum.add(item.subtotal), new Prisma.Decimal(0))
     const createdAt = new Date()
-    const promiseTime = new Date(createdAt.getTime() + 20 * 60 * 1000)
+    const promiseTime = input.promiseTime ?? new Date(createdAt.getTime() + 20 * 60 * 1000)
+    if (Number.isNaN(promiseTime.getTime()) || promiseTime < createdAt) throw new OrderValidationError('La hora de promesa debe ser posterior a la hora actual.')
     const lastOrder = await transaction.order.findFirst({ where: { orderDate: businessDate }, orderBy: { dailyNumber: 'desc' }, select: { dailyNumber: true } })
     const dailyNumber = (lastOrder?.dailyNumber ?? 0) + 1
-    const order = await transaction.order.create({ data: { customerName: input.customerName, address: input.address, createdAt, promiseTime, orderDate: businessDate, dailyNumber, total } })
+    const order = await transaction.order.create({ data: { customerName: input.customerName, address: input.address, createdAt, promiseTime, orderDate: businessDate, dailyNumber, total, dailyMenuId: dailyMenu.id } })
     await transaction.orderItem.createMany({ data: orderItems.map((item) => ({ ...item, orderId: order.id })) })
 
     return serializeOrder(await transaction.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude }))
@@ -161,6 +178,7 @@ export async function listOrders(filters: ListOrdersFilters = {}) {
       ...(dailyNumber ? [{ dailyNumber: Number(dailyNumber) }] : []),
     ]
   }
+  if (filters.activeOnly) where.dailyMenu = { status: 'ACTIVE' }
   const orders = await prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, include: orderInclude })
   return orders.map(serializeOrder)
 }

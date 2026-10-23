@@ -23,4 +23,14 @@ export async function saveDailyMenu(date: string, items: Array<Pick<DailyMenuIte
   return normalizeDailyMenu(menu)
 }
 
+export async function createDailyMenu(date: string, items: Array<Pick<DailyMenuItem, 'menuItemId' | 'availableQuantity'>>) {
+  const menu = await apiRequest<DailyMenu & { items: Array<Omit<DailyMenuItem, 'price'> & { price: number | string }> }>('/daily-menu', { method: 'POST', body: JSON.stringify({ date, items }) })
+  return normalizeDailyMenu(menu)
+}
+
+export async function resetDailyMenu(date: string) {
+  const menu = await apiRequest<DailyMenu & { items: Array<Omit<DailyMenuItem, 'price'> & { price: number | string }> }>('/daily-menu/reset', { method: 'POST', body: JSON.stringify({ date }) })
+  return normalizeDailyMenu(menu)
+}
+
 export { getTodayDate }

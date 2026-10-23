@@ -27,7 +27,7 @@ export function Sidebar({ activeSection, onNavigate }: SidebarProps) {
 
   return (
     <Box component="aside" sx={{ width: { xs: '100%', md: 220 }, flexShrink: 0, bgcolor: 'background.paper', border: 0, px: { xs: 2, md: 2.5 }, py: { xs: 1.5, md: 3 }, display: 'flex', flexDirection: { xs: 'row', md: 'column' }, flexWrap: { xs: 'wrap', md: 'nowrap' }, gap: { xs: 2, md: 0 }, position: { md: 'sticky' }, top: { md: 0 }, height: { md: '100dvh' }, alignSelf: 'flex-start' }}>
-      <Box component="img" src={palmaGoLogo} alt="Palma GO" sx={{ display: 'block', width: { xs: 140, md: 215 }, maxWidth: '92%', height: 'auto', objectFit: 'contain', alignSelf: { xs: 'flex-start', md: 'center' } }} />
+      <Box component="img" src={palmaGoLogo} alt="Palma GO" sx={{ display: 'block', width: { xs: 160, md: 250 }, maxWidth: '100%', height: 'auto', objectFit: 'contain', alignSelf: { xs: 'flex-start', md: 'center' } }} />
       <Stack component="nav" direction={{ xs: 'row', md: 'column' }} spacing={0.75} sx={{ overflowX: 'auto', minHeight: 0, flex: { xs: 1, md: '0 1 auto' }, mt: { md: 3.5 } }}>
         {navigation.map(({ label, icon: Icon, section }) => {
           const active = activeSection === section

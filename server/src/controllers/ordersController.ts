@@ -5,6 +5,7 @@ import {
   createOrder,
   CreateOrderItemInput,
   OrderAvailabilityError,
+  ActiveDailyMenuNotFoundError,
   OrderItemNotFoundError,
   OrderNotFoundError,
   OrderNumberConflictError,
@@ -15,7 +16,7 @@ import {
 } from '../services/ordersService.js'
 import { businessDateFromString } from '../services/dailyMenuService.js'
 
-type OrderBody = { customerName?: unknown; address?: unknown; items?: unknown }
+type OrderBody = { customerName?: unknown; address?: unknown; items?: unknown; promiseTime?: unknown }
 
 function respondError(response: Response, status: number, message: string) {
   return response.status(status).json({ error: message })
@@ -55,11 +56,18 @@ export async function postOrder(request: Request, response: Response) {
     if (!customerName) return respondError(response, 400, 'customerName es obligatorio')
     if (!address) return respondError(response, 400, 'address es obligatorio')
     const items = parseOrderItems(body.items)
-    return response.status(201).json(await createOrder({ customerName, address, items }))
+    let promiseTime: Date | undefined
+    if (body.promiseTime !== undefined) {
+      if (typeof body.promiseTime !== 'string' || !body.promiseTime.trim()) return respondError(response, 400, 'promiseTime no es válido')
+      promiseTime = new Date(body.promiseTime)
+      if (Number.isNaN(promiseTime.getTime())) return respondError(response, 400, 'promiseTime no es válido')
+    }
+    return response.status(201).json(await createOrder({ customerName, address, items, promiseTime }))
   } catch (error) {
     if (error instanceof OrderValidationError) return respondError(response, 400, error.message)
     if (error instanceof OrderItemNotFoundError) return respondError(response, 404, error.message)
     if (error instanceof OrderAvailabilityError) return respondError(response, 409, error.message)
+    if (error instanceof ActiveDailyMenuNotFoundError) return respondError(response, 409, error.message)
     if (error instanceof OrderNumberConflictError) return respondError(response, 409, error.message)
     return respondError(response, 500, 'No se pudo crear el pedido')
   }
@@ -71,11 +79,13 @@ export async function getOrders(request: Request, response: Response) {
     const rawFrom = request.query.from
     const rawTo = request.query.to
     const rawSearch = request.query.search
+    const rawScope = request.query.scope
     if (rawStatus !== undefined && typeof rawStatus !== 'string') return respondError(response, 400, 'status no es válido')
     if (rawStatus !== undefined && !Object.values(OrderStatus).includes(rawStatus as OrderStatus)) return respondError(response, 400, 'status no es válido')
     if (rawFrom !== undefined && typeof rawFrom !== 'string') return respondError(response, 400, 'from no es válido')
     if (rawTo !== undefined && typeof rawTo !== 'string') return respondError(response, 400, 'to no es válido')
     if (rawSearch !== undefined && typeof rawSearch !== 'string') return respondError(response, 400, 'search no es válido')
+    if (rawScope !== undefined && rawScope !== 'active') return respondError(response, 400, 'scope no es válido')
     const from = rawFrom ? businessDateFromString(rawFrom) ?? undefined : undefined
     const to = rawTo ? businessDateFromString(rawTo) ?? undefined : undefined
     if (rawFrom && !from) return respondError(response, 400, 'from debe tener formato YYYY-MM-DD')
@@ -86,6 +96,7 @@ export async function getOrders(request: Request, response: Response) {
       to,
       status: rawStatus as OrderStatus | undefined,
       search: rawSearch,
+      activeOnly: rawScope === 'active',
     }
     return response.status(200).json(await listOrders(filters))
   } catch {
