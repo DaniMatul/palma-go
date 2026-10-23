@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AddCircleOutlineRounded, PersonAddAltRounded } from '@mui/icons-material'
-import { Alert, Box, Button, Card, CircularProgress, Grid, Snackbar, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid, Snackbar, Stack, TextField, Typography } from '@mui/material'
 import { getDailyMenu } from '../services/dailyMenuService'
 import { getExtras } from '../services/extraService'
 import { createOrder, CreateOrderInput } from '../services/orderService'
-import { addMinutesToTime } from '../types/order'
 import { DailyMenuItem, Extra, OrderLine } from '../types/menu'
 import { CustomProductDialog } from './CustomProductDialog'
 import { ExtrasDialog } from './ExtrasDialog'
@@ -13,6 +12,28 @@ import { ProductCard } from './ProductCard'
 
 function getCurrentTime() {
   return new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function getLocalDate(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getDefaultPromise() {
+  const value = new Date(Date.now() + 20 * 60 * 1000)
+  return { date: getLocalDate(value), time: value.toTimeString().slice(0, 5) }
+}
+
+function getLocalDateTime(date: string, time: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  const [hours, minutes] = time.split(':').map(Number)
+  return new Date(year, month - 1, day, hours, minutes)
+}
+
+function toIsoDateTime(date: string, time: string) {
+  return getLocalDateTime(date, time).toISOString()
 }
 
 const emptyQuantities = (menus: DailyMenuItem[]) => Object.fromEntries(menus.map((product) => [product.id, 0]))
@@ -32,9 +53,12 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [extrasOpen, setExtrasOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
   const [createdAt, setCreatedAt] = useState(getCurrentTime)
+  const [promiseDate, setPromiseDate] = useState(() => getDefaultPromise().date)
+  const [promiseTime, setPromiseTime] = useState(() => getDefaultPromise().time)
+  const [promiseTimeError, setPromiseTimeError] = useState('')
+  const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [notification, setNotification] = useState<{ severity: 'success' | 'error'; message: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const promiseTime = useMemo(() => addMinutesToTime(createdAt, 20), [createdAt])
   const orderItems = useMemo(() => [
     ...menus.filter((product) => (quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: quantities[product.id] })),
     ...extraItems,
@@ -74,8 +98,15 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     if (!customerName.trim()) missingFields.push('el nombre del cliente')
     if (!address.trim()) missingFields.push('la dirección')
     if (orderItems.length === 0) missingFields.push('al menos un producto')
+    const selectedPromiseTime = promiseTime ? getLocalDateTime(promiseDate, promiseTime) : null
     if (missingFields.length > 0) {
       setNotification({ severity: 'error', message: `Completa ${missingFields.join(', ')}.` })
+      return
+    }
+    if (!selectedPromiseTime || Number.isNaN(selectedPromiseTime.getTime()) || selectedPromiseTime < new Date()) {
+      const message = 'La hora de promesa debe ser posterior a la hora actual.'
+      setPromiseTimeError(message)
+      setNotification({ severity: 'error', message })
       return
     }
     setSubmitting(true)
@@ -84,6 +115,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     const input: CreateOrderInput = {
       customerName: customerName.trim(),
       address: address.trim(),
+      promiseTime: toIsoDateTime(promiseDate, promiseTime),
       items: [
         ...menus.filter((product) => (quantities[product.id] ?? 0) > 0).map((product) => ({ type: 'MENU' as const, menuItemId: product.menuItemId, quantity: quantities[product.id] })),
         ...extraItems.map((item) => ({ type: 'EXTRA' as const, extraId: item.id, quantity: item.quantity })),
@@ -100,6 +132,10 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       setExtraItems([])
       setCustomItems([])
       setCreatedAt(getCurrentTime())
+      const nextPromise = getDefaultPromise()
+      setPromiseDate(nextPromise.date)
+      setPromiseTime(nextPromise.time)
+      setPromiseTimeError('')
       try {
         const latestMenu = await getDailyMenu()
         setMenus(latestMenu.items)
@@ -115,6 +151,22 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const resetDraft = () => {
+    const nextPromise = getDefaultPromise()
+    setCustomerName('')
+    setAddress('')
+    setQuantities(emptyQuantities(menus))
+    setExtraItems([])
+    setCustomItems([])
+    setCreatedAt(getCurrentTime())
+    setPromiseDate(nextPromise.date)
+    setPromiseTime(nextPromise.time)
+    setPromiseTimeError('')
+    setNotification(null)
+    setError('')
+    setClearDialogOpen(false)
   }
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box>
@@ -146,11 +198,21 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
           </Stack>
         </Grid>
         <Grid item xs={12} lg={4}>
-          <NewOrderSummary items={orderItems} createdAt={createdAt} promiseTime={promiseTime} onCreate={handleCreate} loading={submitting} />
+          <NewOrderSummary items={orderItems} createdAt={createdAt} promiseTime={promiseTime} promiseTimeError={promiseTimeError} onPromiseTimeChange={(value) => { setPromiseTime(value); setPromiseDate(getLocalDate(new Date())); setPromiseTimeError('') }} onCreate={handleCreate} onClear={() => setClearDialogOpen(true)} loading={submitting} />
         </Grid>
       </Grid>
       <ExtrasDialog open={extrasOpen} extras={extras.filter((extra) => extra.active)} onClose={() => setExtrasOpen(false)} onConfirm={(items) => { setExtraItems(items); setExtrasOpen(false); setNotification(null) }} />
       <CustomProductDialog open={customOpen} onClose={() => setCustomOpen(false)} onAdd={(item) => { setCustomItems((current) => [...current, item]); setNotification(null) }} />
+      <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)} aria-labelledby="clear-order-dialog-title">
+        <DialogTitle id="clear-order-dialog-title">Limpiar pedido</DialogTitle>
+        <DialogContent>
+          <DialogContentText>Se eliminarán todos los datos ingresados en este pedido y las cantidades volverán a 0.</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearDialogOpen(false)}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={resetDraft}>Limpiar pedido</Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar open={Boolean(notification)} autoHideDuration={4000} onClose={() => setNotification(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} sx={{ maxWidth: 'calc(100vw - 32px)' }}><Alert severity={notification?.severity ?? 'success'} onClose={() => setNotification(null)} sx={{ width: '100%' }}>{notification?.message}</Alert></Snackbar>
     </Box>
   )

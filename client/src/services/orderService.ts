@@ -35,6 +35,7 @@ export type CreateOrderInput = {
   customerName: string
   address: string
   items: CreateOrderItemInput[]
+  promiseTime: string
 }
 
 function formatTime(value: string) {
@@ -66,7 +67,7 @@ function normalizeOrder(order: ApiOrder): Order {
   }
 }
 
-export type OrderQuery = { from?: string; to?: string; status?: OrderStatus; search?: string }
+export type OrderQuery = { from?: string; to?: string; status?: OrderStatus; search?: string; activeOnly?: boolean }
 
 export async function getOrders(filters: OrderQuery = {}) {
   const backendStatus = filters.status === 'in-progress' ? 'IN_PROGRESS' : filters.status === 'completed' ? 'COMPLETED' : filters.status === 'cancelled' ? 'CANCELLED' : undefined
@@ -75,6 +76,7 @@ export async function getOrders(filters: OrderQuery = {}) {
   if (filters.to) params.set('to', filters.to)
   if (backendStatus) params.set('status', backendStatus)
   if (filters.search?.trim()) params.set('search', filters.search.trim())
+  if (filters.activeOnly) params.set('scope', 'active')
   const query = params.toString() ? `?${params.toString()}` : ''
   const orders = await apiRequest<ApiOrder[]>(`/orders${query}`)
   return orders.map(normalizeOrder)

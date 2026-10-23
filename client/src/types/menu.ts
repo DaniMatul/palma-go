@@ -38,11 +38,14 @@ export type DailyMenuItem = {
   price: number
   availableQuantity: number
   remainingQuantity: number
+  soldQuantity?: number
+  revenue?: number
 }
 
 export type DailyMenu = {
   id: string | null
   date: string
+  status?: 'ACTIVE' | 'CLOSED'
   createdAt: string | null
   updatedAt: string | null
   items: DailyMenuItem[]

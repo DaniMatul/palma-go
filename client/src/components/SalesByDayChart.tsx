@@ -1,6 +1,7 @@
-import { Box, Paper, Stack, ToggleButton, ToggleButtonGroup, Typography, useTheme } from '@mui/material'
+import { Box, Paper, Stack, Typography, useTheme } from '@mui/material'
 import { SalesPoint } from '../types/dashboard'
 import { useEffect, useRef, useState } from 'react'
+import { PeriodSelector } from './PeriodSelector'
 
 type SalesByDayChartProps = {
   data: SalesPoint[]
@@ -42,10 +43,7 @@ export function SalesByDayChart({ data, total, period, onPeriodChange }: SalesBy
             Q{total.toLocaleString('es-GT', { minimumFractionDigits: 2 })}
           </Typography>
         </Box>
-        <ToggleButtonGroup value={period} exclusive onChange={(_, value: 'week' | 'month' | null) => value && onPeriodChange(value)} size="small" aria-label="Periodo de ventas">
-          <ToggleButton value="week">Semana</ToggleButton>
-          <ToggleButton value="month">Mes</ToggleButton>
-        </ToggleButtonGroup>
+        <PeriodSelector value={period} onChange={(value) => onPeriodChange(value as 'week' | 'month')} label="Periodo de ventas" options={[{ value: 'week', label: 'Semana' }, { value: 'month', label: 'Mes' }]} />
       </Stack>
       <Box ref={chartRef} sx={{ mt: 2, mx: 'auto', maxWidth: 1100, width: '100%', height: { xs: 260, sm: 310 }, overflow: 'hidden' }}>
         <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" style={{ display: 'block' }} role="img" aria-label="Gráfica de ventas">

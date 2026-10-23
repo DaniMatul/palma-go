@@ -1,16 +1,19 @@
 import { AccessTimeRounded, CheckCircleRounded } from '@mui/icons-material'
-import { Box, Button, Divider, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/material'
 import { OrderLine } from '../types/menu'
 
 type NewOrderSummaryProps = {
   items: OrderLine[]
   createdAt: string
   promiseTime: string
+  promiseTimeError?: string
+  onPromiseTimeChange: (value: string) => void
   onCreate: () => void
+  onClear: () => void
   loading?: boolean
 }
 
-export function NewOrderSummary({ items, createdAt, promiseTime, onCreate, loading = false }: NewOrderSummaryProps) {
+export function NewOrderSummary({ items, createdAt, promiseTime, promiseTimeError, onPromiseTimeChange, onCreate, onClear, loading = false }: NewOrderSummaryProps) {
   const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
 
   return (
@@ -23,10 +26,13 @@ export function NewOrderSummary({ items, createdAt, promiseTime, onCreate, loadi
       <Divider sx={{ my: 3 }} />
       <Stack spacing={1.25} sx={{ mb: 2.5 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center"><Stack direction="row" alignItems="center" gap={1}><AccessTimeRounded fontSize="small" color="action" /><Typography color="text.secondary">Hora del pedido</Typography></Stack><Typography sx={{ fontWeight: 700 }}>{createdAt}</Typography></Stack>
-        <Stack direction="row" justifyContent="space-between" alignItems="center"><Stack direction="row" alignItems="center" gap={1}><AccessTimeRounded fontSize="small" color="action" /><Typography color="text.secondary">Hora promesa</Typography></Stack><Typography sx={{ fontWeight: 700 }}>{promiseTime}</Typography></Stack>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}><Stack direction="row" alignItems="center" gap={1}><AccessTimeRounded fontSize="small" color="action" /><Typography color="text.secondary">Hora promesa</Typography></Stack><TextField type="time" size="small" value={promiseTime} onChange={(event) => onPromiseTimeChange(event.target.value)} error={Boolean(promiseTimeError)} helperText={promiseTimeError} inputProps={{ step: 60 }} sx={{ width: 132, '& input': { fontWeight: 700, textAlign: 'center' }, '& .MuiFormHelperText-root': { whiteSpace: 'nowrap', ml: 0 } }} /> </Stack>
       </Stack>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>Total</Typography><Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>Q{total}</Typography></Stack>
-      <Button fullWidth size="large" variant="contained" startIcon={<CheckCircleRounded />} onClick={onCreate} disabled={loading} sx={{ minHeight: 54, fontWeight: 800 }}>{loading ? 'Creando...' : 'Crear pedido'}</Button>
+      <Stack spacing={1.25}>
+        <Button fullWidth size="large" variant="contained" startIcon={<CheckCircleRounded />} onClick={onCreate} disabled={loading} sx={{ minHeight: 54, fontWeight: 800 }}>{loading ? 'Creando...' : 'Crear pedido'}</Button>
+        <Button fullWidth variant="outlined" color="error" onClick={onClear} disabled={loading} sx={{ minHeight: 44, fontWeight: 700 }}>Limpiar pedido</Button>
+      </Stack>
     </Paper>
   )
 }

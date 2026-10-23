@@ -23,7 +23,7 @@ function App() {
     setOrdersLoading(true)
     setOrdersError('')
     try {
-      const loadedOrders = await getOrders()
+      const loadedOrders = await getOrders({ activeOnly: true })
       setOrders(loadedOrders)
       setSelectedId((currentId) => loadedOrders.some((order) => order.id === currentId) ? currentId : loadedOrders[0]?.id ?? '')
     } catch (error: unknown) {

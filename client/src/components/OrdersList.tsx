@@ -10,27 +10,49 @@ type ViewMode = 'list' | 'grid'
 
 const pageSize = 10
 
+function timeToMinutes(value: string) {
+  const match = value.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return Number.MAX_SAFE_INTEGER
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  return hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60 ? hours * 60 + minutes : Number.MAX_SAFE_INTEGER
+}
+
 function sortOrders(orders: Order[], status: OrderStatus) {
+  if (status !== 'in-progress') return [...orders].sort((first, second) => second.createdAt.localeCompare(first.createdAt))
+
+  const now = new Date()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
   return [...orders].sort((first, second) => {
-    if (status === 'in-progress') return first.promiseTime.localeCompare(second.promiseTime)
-    return second.createdAt.localeCompare(first.createdAt)
+    const firstPromise = timeToMinutes(first.promiseTime)
+    const secondPromise = timeToMinutes(second.promiseTime)
+    const firstOverdue = firstPromise < currentMinutes
+    const secondOverdue = secondPromise < currentMinutes
+
+    if (firstOverdue !== secondOverdue) return firstOverdue ? -1 : 1
+    return firstPromise - secondPromise || first.createdAt.localeCompare(second.createdAt)
   })
 }
 
 export function OrdersList({ orders, filter, selectedId, onFilterChange, onSelect }: OrdersListProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [page, setPage] = useState(1)
+  const [now, setNow] = useState(Date.now())
   const counts = useMemo(() => ({
     'in-progress': orders.filter((order) => order.status === 'in-progress').length,
     completed: orders.filter((order) => order.status === 'completed').length,
     cancelled: orders.filter((order) => order.status === 'cancelled').length,
   }), [orders])
-  const sortedOrders = useMemo(() => sortOrders(orders.filter((order) => order.status === filter), filter), [filter, orders])
+  const sortedOrders = useMemo(() => sortOrders(orders.filter((order) => order.status === filter), filter), [filter, now, orders])
   const pageCount = Math.max(1, Math.ceil(sortedOrders.length / pageSize))
   const paginatedOrders = sortedOrders.slice((page - 1) * pageSize, page * pageSize)
 
   useEffect(() => { setPage(1) }, [filter])
   useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount])
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleFilterChange = (nextFilter: OrderStatus) => {
     setPage(1)
@@ -62,9 +84,9 @@ export function OrdersList({ orders, filter, selectedId, onFilterChange, onSelec
       </Tabs>
 
       {paginatedOrders.length > 0 ? viewMode === 'list' ? (
-        <Stack spacing={1.5}>{paginatedOrders.map((order) => <OrderCard key={order.id} order={order} selected={order.id === selectedId} onSelect={() => onSelect(order.id)} />)}</Stack>
+        <Stack spacing={1.5}>{paginatedOrders.map((order) => <OrderCard key={order.id} order={order} selected={order.id === selectedId} onSelect={() => onSelect(order.id)} now={now} />)}</Stack>
       ) : (
-        <Grid container spacing={1.5}>{paginatedOrders.map((order) => <Grid item xs={12} sm={6} xl={4} key={order.id}><OrderGridCard order={order} selected={order.id === selectedId} onSelect={() => onSelect(order.id)} /></Grid>)}</Grid>
+        <Grid container spacing={1.5}>{paginatedOrders.map((order) => <Grid item xs={12} sm={6} xl={4} key={order.id}><OrderGridCard order={order} selected={order.id === selectedId} onSelect={() => onSelect(order.id)} now={now} /></Grid>)}</Grid>
       ) : <Typography color="text.secondary" sx={{ py: 5, textAlign: 'center' }}>No hay pedidos en esta sección.</Typography>}
 
       {sortedOrders.length > 0 && <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ mt: 3 }}>

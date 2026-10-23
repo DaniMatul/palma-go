@@ -3,6 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material'
 import App from './App'
 
+const notificationTones = {
+  success: { background: '#F3F8F5', border: '#D7E8DE', color: '#4F5E56', icon: '#5F9278' },
+  error: { background: '#FBF3F4', border: '#EED6D9', color: '#6C5558', icon: '#B36A72' },
+  warning: { background: '#FBF8F0', border: '#EDE2C7', color: '#6E6250', icon: '#A8884F' },
+  info: { background: '#F3F4FA', border: '#DFE1EF', color: '#555A6D', icon: '#7278B5' },
+} as const
+
 declare module '@mui/material/styles' {
   interface TypeBackground {
     secondary: string
@@ -71,6 +78,22 @@ const theme = createTheme({
     MuiChip: { styleOverrides: { root: { borderRadius: 999 } } },
     MuiDialog: { styleOverrides: { paper: { borderRadius: 24 } } },
     MuiTab: { styleOverrides: { root: { textTransform: 'none', fontWeight: 700 } } },
+    MuiAlert: {
+      styleOverrides: {
+        root: ({ ownerState }) => {
+          const tone = notificationTones[ownerState.severity ?? 'info']
+          return {
+            backgroundColor: tone.background,
+            border: `1px solid ${tone.border}`,
+            borderRadius: 14,
+            color: tone.color,
+            boxShadow: '0 6px 18px rgba(50, 55, 80, 0.08)',
+            '& .MuiAlert-icon': { color: tone.icon },
+            '& .MuiAlert-action': { color: tone.color },
+          }
+        },
+      },
+    },
   },
 })
 
