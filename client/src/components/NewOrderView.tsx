@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AddCircleOutlineRounded, PersonAddAltRounded } from '@mui/icons-material'
+import { AddCircleOutlineRounded, DeleteOutlineRounded, PersonAddAltRounded } from '@mui/icons-material'
 import { Alert, Box, Button, Card, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid, Snackbar, Stack, TextField, Typography } from '@mui/material'
 import { getDailyMenu } from '../services/dailyMenuService'
 import { getExtras } from '../services/extraService'
@@ -40,6 +40,18 @@ const emptyQuantities = (menus: DailyMenuItem[]) => Object.fromEntries(menus.map
 
 type NewOrderViewProps = { onOrderCreated?: () => Promise<void> | void }
 
+type AccountDraft = {
+  id: string
+  name: string
+  quantities: Record<string, number>
+  extraItems: OrderLine[]
+  customItems: OrderLine[]
+}
+
+function createAccount(menus: DailyMenuItem[], index: number): AccountDraft {
+  return { id: `account-${index}-${Date.now()}`, name: '', quantities: emptyQuantities(menus), extraItems: [], customItems: [] }
+}
+
 export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [menus, setMenus] = useState<DailyMenuItem[]>([])
   const [extras, setExtras] = useState<Extra[]>([])
@@ -47,9 +59,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [error, setError] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [address, setAddress] = useState('')
-  const [quantities, setQuantities] = useState<Record<string, number>>({})
-  const [extraItems, setExtraItems] = useState<OrderLine[]>([])
-  const [customItems, setCustomItems] = useState<OrderLine[]>([])
+  const [accounts, setAccounts] = useState<AccountDraft[]>(() => [createAccount([], 0)])
+  const [activeAccountId, setActiveAccountId] = useState('')
   const [extrasOpen, setExtrasOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
   const [createdAt, setCreatedAt] = useState(getCurrentTime)
@@ -59,11 +70,14 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [notification, setNotification] = useState<{ severity: 'success' | 'error'; message: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const orderItems = useMemo(() => [
-    ...menus.filter((product) => (quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: quantities[product.id] })),
-    ...extraItems,
-    ...customItems,
-  ], [customItems, extraItems, menus, quantities])
+  const [accountErrorId, setAccountErrorId] = useState<string | null>(null)
+  const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0]
+  const getAccountItems = (account: AccountDraft) => [
+    ...menus.filter((product) => (account.quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: account.quantities[product.id] })),
+    ...account.extraItems,
+    ...account.customItems,
+  ]
+  const accountSummaries = useMemo(() => accounts.map((account) => ({ id: account.id, name: account.name, items: getAccountItems(account) })), [accounts, menus])
 
   useEffect(() => {
     let cancelled = false
@@ -74,7 +88,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
         if (cancelled) return
         setMenus(dailyMenu.items)
         setExtras(loadedExtras)
-        setQuantities(emptyQuantities(dailyMenu.items))
+        setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(dailyMenu.items) })))
+        setActiveAccountId((current) => current || accounts[0]?.id || '')
       })
       .catch((requestError: unknown) => {
         if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'No se pudo cargar el menú de hoy')
@@ -85,11 +100,28 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
 
   const changeQuantity = (product: DailyMenuItem, amount: number) => {
     setNotification(null)
-    setQuantities((current) => {
-      const currentQuantity = current[product.id] ?? 0
+    if (!activeAccount) return
+    if (accountErrorId === activeAccount.id) setAccountErrorId(null)
+    setAccounts((current) => current.map((account) => {
+      if (account.id !== activeAccount.id) return account
+      const currentQuantity = account.quantities[product.id] ?? 0
       const nextQuantity = Math.max(0, Math.min(product.remainingQuantity, currentQuantity + amount))
-      return { ...current, [product.id]: nextQuantity }
-    })
+      return { ...account, quantities: { ...account.quantities, [product.id]: nextQuantity } }
+    }))
+  }
+
+  const addAccount = () => {
+    const account = createAccount(menus, accounts.length)
+    setAccounts((current) => [...current, account])
+    setActiveAccountId(account.id)
+  }
+
+  const removeAccount = (id: string) => {
+    if (accounts.length === 1) return
+    const next = accounts.filter((account) => account.id !== id)
+    setAccounts(next)
+    if (id === accountErrorId) setAccountErrorId(null)
+    if (id === activeAccountId) setActiveAccountId(next[0].id)
   }
 
   const handleCreate = async () => {
@@ -97,7 +129,15 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     const missingFields: string[] = []
     if (!customerName.trim()) missingFields.push('el nombre del cliente')
     if (!address.trim()) missingFields.push('la dirección')
-    if (orderItems.length === 0) missingFields.push('al menos un producto')
+    const emptyAccountIndex = accountSummaries.findIndex((account) => account.items.length === 0)
+    if (emptyAccountIndex !== -1) {
+      const emptyAccount = accountSummaries[emptyAccountIndex]
+      const accountLabel = emptyAccount.name.trim() ? `la cuenta ${emptyAccount.name.trim()}` : `la Cuenta ${emptyAccountIndex + 1}`
+      const message = `${accountLabel} está vacía. Agrega un producto o elimina la cuenta.`
+      setAccountErrorId(emptyAccount.id)
+      setNotification({ severity: 'error', message: message.charAt(0).toUpperCase() + message.slice(1) })
+      return
+    }
     const selectedPromiseTime = promiseTime ? getLocalDateTime(promiseDate, promiseTime) : null
     if (missingFields.length > 0) {
       setNotification({ severity: 'error', message: `Completa ${missingFields.join(', ')}.` })
@@ -116,11 +156,16 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       customerName: customerName.trim(),
       address: address.trim(),
       promiseTime: toIsoDateTime(promiseDate, promiseTime),
-      items: [
-        ...menus.filter((product) => (quantities[product.id] ?? 0) > 0).map((product) => ({ type: 'MENU' as const, menuItemId: product.menuItemId, quantity: quantities[product.id] })),
-        ...extraItems.map((item) => ({ type: 'EXTRA' as const, extraId: item.id, quantity: item.quantity })),
-        ...customItems.map((item) => ({ type: 'CUSTOM' as const, description: item.name, unitPrice: item.price, quantity: item.quantity })),
-      ],
+      accounts: accountSummaries.map((account) => ({
+        name: account.name.trim() || undefined,
+        items: account.items.map((item) => {
+          const menu = menus.find((product) => product.menuItemId === item.id)
+          if (menu) return { type: 'MENU' as const, menuItemId: menu.menuItemId, quantity: item.quantity }
+          const extra = extras.find((product) => product.id === item.id)
+          if (extra) return { type: 'EXTRA' as const, extraId: extra.id, quantity: item.quantity }
+          return { type: 'CUSTOM' as const, description: item.name, unitPrice: item.price, quantity: item.quantity }
+        }),
+      })),
     }
 
     try {
@@ -128,9 +173,9 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       setNotification({ severity: 'success', message: 'Pedido creado correctamente' })
       setCustomerName('')
       setAddress('')
-      setQuantities(emptyQuantities(menus))
-      setExtraItems([])
-      setCustomItems([])
+      setAccounts([createAccount(menus, 0)])
+      setActiveAccountId('')
+      setAccountErrorId(null)
       setCreatedAt(getCurrentTime())
       const nextPromise = getDefaultPromise()
       setPromiseDate(nextPromise.date)
@@ -139,7 +184,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       try {
         const latestMenu = await getDailyMenu()
         setMenus(latestMenu.items)
-        setQuantities(emptyQuantities(latestMenu.items))
+        setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(latestMenu.items) })))
         await onOrderCreated?.()
       } catch {
         console.error('No se pudo actualizar el menú del día después de crear el pedido')
@@ -157,9 +202,9 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     const nextPromise = getDefaultPromise()
     setCustomerName('')
     setAddress('')
-    setQuantities(emptyQuantities(menus))
-    setExtraItems([])
-    setCustomItems([])
+    setAccounts([createAccount(menus, 0)])
+    setActiveAccountId('')
+    setAccountErrorId(null)
     setCreatedAt(getCurrentTime())
     setPromiseDate(nextPromise.date)
     setPromiseTime(nextPromise.time)
@@ -184,25 +229,27 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
               <TextField fullWidth label="Dirección" value={address} onChange={(event) => setAddress(event.target.value)} inputProps={{ maxLength: 120 }} />
             </Stack>
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>Menú principal</Typography>
-              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>Menú principal</Typography><Button size="small" startIcon={<PersonAddAltRounded />} onClick={addAccount}>Agregar cuenta</Button></Stack>
+              <Stack direction="row" spacing={1} sx={{ mb: 2, overflowX: 'auto' }}>{accounts.map((account, index) => <Button key={account.id} color={accountErrorId === account.id ? 'error' : 'primary'} variant={account.id === activeAccount?.id ? 'contained' : 'outlined'} onClick={() => setActiveAccountId(account.id)} sx={{ whiteSpace: 'nowrap' }}>Cuenta {index + 1}{account.name.trim() ? ` · ${account.name.trim()}` : ''}{accounts.length > 1 && <DeleteOutlineRounded sx={{ ml: 0.5, fontSize: 18 }} onClick={(event) => { event.stopPropagation(); removeAccount(account.id) }} />}</Button>)}</Stack>
+              {activeAccount && <TextField fullWidth size="small" label="Nombre de cuenta (opcional)" value={activeAccount.name} error={accountErrorId === activeAccount.id} helperText={accountErrorId === activeAccount.id ? 'Agrega un producto o elimina la cuenta.' : undefined} onChange={(event) => setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, name: event.target.value } : account))} inputProps={{ maxLength: 80 }} sx={{ mb: 2 }} />}
+              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={activeAccount?.quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
                 <Card elevation={0} sx={{ flex: 1, border: '1px dashed', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
-                  <Button fullWidth size="large" startIcon={<AddCircleOutlineRounded />} onClick={() => setExtrasOpen(true)} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar extras</Button>
+                  <Button fullWidth size="large" startIcon={<AddCircleOutlineRounded />} onClick={() => setExtrasOpen(true)} disabled={!activeAccount} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar extras</Button>
                 </Card>
                 <Card elevation={0} sx={{ flex: 1, border: '1px dashed', borderColor: 'divider', bgcolor: 'background.paper' }}>
-                  <Button fullWidth size="large" startIcon={<PersonAddAltRounded />} onClick={() => setCustomOpen(true)} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar personalizado</Button>
+                  <Button fullWidth size="large" startIcon={<PersonAddAltRounded />} onClick={() => setCustomOpen(true)} disabled={!activeAccount} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar personalizado</Button>
                 </Card>
               </Stack>
             </Box>
           </Stack>
         </Grid>
         <Grid item xs={12} lg={4}>
-          <NewOrderSummary items={orderItems} createdAt={createdAt} promiseTime={promiseTime} promiseTimeError={promiseTimeError} onPromiseTimeChange={(value) => { setPromiseTime(value); setPromiseDate(getLocalDate(new Date())); setPromiseTimeError('') }} onCreate={handleCreate} onClear={() => setClearDialogOpen(true)} loading={submitting} />
+          <NewOrderSummary accounts={accountSummaries} createdAt={createdAt} promiseTime={promiseTime} promiseTimeError={promiseTimeError} onPromiseTimeChange={(value) => { setPromiseTime(value); setPromiseDate(getLocalDate(new Date())); setPromiseTimeError('') }} onCreate={handleCreate} onClear={() => setClearDialogOpen(true)} loading={submitting} />
         </Grid>
       </Grid>
-      <ExtrasDialog open={extrasOpen} extras={extras.filter((extra) => extra.active)} onClose={() => setExtrasOpen(false)} onConfirm={(items) => { setExtraItems(items); setExtrasOpen(false); setNotification(null) }} />
-      <CustomProductDialog open={customOpen} onClose={() => setCustomOpen(false)} onAdd={(item) => { setCustomItems((current) => [...current, item]); setNotification(null) }} />
+      <ExtrasDialog open={extrasOpen} extras={extras.filter((extra) => extra.active)} onClose={() => setExtrasOpen(false)} onConfirm={(items) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, extraItems: items } : account)); setAccountErrorId(null); setExtrasOpen(false); setNotification(null) }} />
+      <CustomProductDialog open={customOpen} onClose={() => setCustomOpen(false)} onAdd={(item) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, customItems: [...account.customItems, item] } : account)); setAccountErrorId(null); setNotification(null) }} />
       <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)} aria-labelledby="clear-order-dialog-title">
         <DialogTitle id="clear-order-dialog-title">Limpiar pedido</DialogTitle>
         <DialogContent>

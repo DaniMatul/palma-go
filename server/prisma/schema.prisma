@@ -86,9 +86,21 @@ model Order {
   total        Decimal
   dailyMenuId  String?
   items        OrderItem[]
+  accounts     OrderAccount[]
   dailyMenu    DailyMenu?  @relation(fields: [dailyMenuId], references: [id], onDelete: SetNull)
 
   @@unique([orderDate, dailyNumber])
+}
+
+model OrderAccount {
+  id        String      @id @default(cuid())
+  orderId   String
+  name      String?
+  position  Int         @default(1)
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items     OrderItem[]
+
+  @@index([orderId, position])
 }
 
 model OrderItem {
@@ -102,7 +114,9 @@ model OrderItem {
   menuItemId      String?
   extraId         String?
   dailyMenuItemId String?
+  orderAccountId  String
   order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderAccount    OrderAccount   @relation(fields: [orderAccountId], references: [id], onDelete: Cascade)
   menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   extra           Extra?         @relation(fields: [extraId], references: [id], onDelete: Restrict)
   dailyMenuItem   DailyMenuItem? @relation(fields: [dailyMenuItemId], references: [id], onDelete: Restrict)

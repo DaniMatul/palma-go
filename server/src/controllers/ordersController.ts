@@ -3,6 +3,7 @@ import { OrderItemType, OrderStatus } from '@prisma/client'
 import {
   changeOrderStatus,
   createOrder,
+  CreateOrderAccountInput,
   CreateOrderItemInput,
   OrderAvailabilityError,
   ActiveDailyMenuNotFoundError,
@@ -16,7 +17,7 @@ import {
 } from '../services/ordersService.js'
 import { businessDateFromString } from '../services/dailyMenuService.js'
 
-type OrderBody = { customerName?: unknown; address?: unknown; items?: unknown; promiseTime?: unknown }
+type OrderBody = { customerName?: unknown; address?: unknown; items?: unknown; accounts?: unknown; promiseTime?: unknown }
 
 function respondError(response: Response, status: number, message: string) {
   return response.status(status).json({ error: message })
@@ -47,6 +48,16 @@ function parseOrderItems(value: unknown): CreateOrderItemInput[] {
   })
 }
 
+function parseOrderAccounts(value: unknown): CreateOrderAccountInput[] {
+  if (!Array.isArray(value) || value.length === 0) throw new OrderValidationError('accounts debe tener al menos una cuenta')
+  return value.map((rawAccount) => {
+    if (typeof rawAccount !== 'object' || rawAccount === null) throw new OrderValidationError('Cada cuenta debe ser un objeto')
+    const account = rawAccount as Record<string, unknown>
+    const name = typeof account.name === 'string' ? account.name.trim() : undefined
+    return { name: name || undefined, items: parseOrderItems(account.items) }
+  })
+}
+
 export async function postOrder(request: Request, response: Response) {
   try {
     if (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body)) return respondError(response, 400, 'El body debe ser un objeto')
@@ -55,14 +66,16 @@ export async function postOrder(request: Request, response: Response) {
     const address = typeof body.address === 'string' ? body.address.trim() : ''
     if (!customerName) return respondError(response, 400, 'customerName es obligatorio')
     if (!address) return respondError(response, 400, 'address es obligatorio')
-    const items = parseOrderItems(body.items)
+    const accounts = body.accounts !== undefined
+      ? parseOrderAccounts(body.accounts)
+      : { items: parseOrderItems(body.items) }
     let promiseTime: Date | undefined
     if (body.promiseTime !== undefined) {
       if (typeof body.promiseTime !== 'string' || !body.promiseTime.trim()) return respondError(response, 400, 'promiseTime no es válido')
       promiseTime = new Date(body.promiseTime)
       if (Number.isNaN(promiseTime.getTime())) return respondError(response, 400, 'promiseTime no es válido')
     }
-    return response.status(201).json(await createOrder({ customerName, address, items, promiseTime }))
+    return response.status(201).json(await createOrder({ customerName, address, accounts, promiseTime }))
   } catch (error) {
     if (error instanceof OrderValidationError) return respondError(response, 400, error.message)
     if (error instanceof OrderItemNotFoundError) return respondError(response, 404, error.message)
