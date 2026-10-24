@@ -3,7 +3,7 @@ import { Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/
 import { OrderLine } from '../types/menu'
 
 type NewOrderSummaryProps = {
-  items: OrderLine[]
+  accounts: Array<{ id: string; name: string; items: OrderLine[] }>
   createdAt: string
   promiseTime: string
   promiseTimeError?: string
@@ -13,15 +13,15 @@ type NewOrderSummaryProps = {
   loading?: boolean
 }
 
-export function NewOrderSummary({ items, createdAt, promiseTime, promiseTimeError, onPromiseTimeChange, onCreate, onClear, loading = false }: NewOrderSummaryProps) {
-  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
+export function NewOrderSummary({ accounts, createdAt, promiseTime, promiseTimeError, onPromiseTimeChange, onCreate, onClear, loading = false }: NewOrderSummaryProps) {
+  const total = accounts.reduce((sum, account) => sum + account.items.reduce((accountTotal, item) => accountTotal + item.price * item.quantity, 0), 0)
 
   return (
     <Paper component="section" aria-labelledby="order-summary-title" elevation={0} sx={{ p: { xs: 2.5, md: 3 }, border: '1px solid', borderColor: 'divider', borderRadius: 3, position: { lg: 'sticky' }, top: { lg: 24 } }}>
       <Typography id="order-summary-title" variant="h5" sx={{ fontWeight: 800 }}>Resumen del pedido</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 3 }}>Confirma los productos antes de crear.</Typography>
       <Stack spacing={2} sx={{ minHeight: { xs: 80, lg: 140 } }}>
-        {items.length > 0 ? items.map((item) => <Stack key={item.id} direction="row" justifyContent="space-between" gap={2}><Box><Typography sx={{ fontWeight: 700 }}>{item.name}</Typography><Typography variant="body2" color="text.secondary">{item.quantity} x Q{item.price}</Typography></Box><Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Q{item.quantity * item.price}</Typography></Stack>) : <Typography color="text.secondary">Aún no has agregado productos.</Typography>}
+        {accounts.some((account) => account.items.length > 0) ? accounts.map((account, accountIndex) => <Box key={account.id}><Typography sx={{ fontWeight: 800, mb: 1 }}>{account.name.trim() || `Cuenta ${accountIndex + 1}`}</Typography><Stack spacing={1.25}>{account.items.length > 0 ? account.items.map((item, itemIndex) => <Stack key={`${item.id}-${itemIndex}`} direction="row" justifyContent="space-between" gap={2}><Box><Typography sx={{ fontWeight: 700 }}>{item.name}</Typography><Typography variant="body2" color="text.secondary">{item.quantity} x Q{item.price}</Typography></Box><Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Q{item.quantity * item.price}</Typography></Stack>) : <Typography variant="body2" color="text.secondary">Sin productos</Typography>}</Stack><Stack direction="row" justifyContent="space-between" sx={{ mt: 1.5 }}><Typography variant="body2" fontWeight={700}>Subtotal</Typography><Typography variant="body2" fontWeight={700}>Q{account.items.reduce((sum, item) => sum + item.price * item.quantity, 0)}</Typography></Stack></Box>) : <Typography color="text.secondary">Aún no has agregado productos.</Typography>}
       </Stack>
       <Divider sx={{ my: 3 }} />
       <Stack spacing={1.25} sx={{ mb: 2.5 }}>

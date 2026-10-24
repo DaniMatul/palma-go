@@ -21,9 +21,9 @@ export function OrderDetail({ order, onComplete, onReopen, onCancel }: OrderDeta
         <Typography><strong>Hora del pedido:</strong> {order.createdAt}</Typography>
         <Typography><strong>Hora promesa:</strong> {order.promiseTime}</Typography>
       </Stack>
-      <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1.5 }}>Productos</Typography>
+      <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1.5 }}>Cuentas</Typography>
       <Stack spacing={2}>
-        {order.items.map((item) => <Stack key={item.name} direction="row" justifyContent="space-between" gap={2}><Box><Typography sx={{ fontWeight: 700 }}>{item.name}</Typography><Typography variant="body2" color="text.secondary">Cantidad: {item.quantity} · Unitario: Q{item.price}</Typography></Box><Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Q{item.quantity * item.price}</Typography></Stack>)}
+        {order.accounts.map((account, accountIndex) => <Box key={account.id ?? accountIndex}><Typography sx={{ fontWeight: 800, mb: 1 }}>{account.name?.trim() || `Cuenta ${accountIndex + 1}`}</Typography><Stack spacing={1.25}>{account.items.map((item, itemIndex) => <Stack key={`${item.id ?? item.name}-${itemIndex}`} direction="row" justifyContent="space-between" gap={2}><Box><Typography sx={{ fontWeight: 700 }}>{item.name}</Typography><Typography variant="body2" color="text.secondary">Cantidad: {item.quantity} · Unitario: Q{item.price}</Typography></Box><Typography sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>Q{item.subtotal ?? item.quantity * item.price}</Typography></Stack>)}</Stack><Stack direction="row" justifyContent="space-between" sx={{ mt: 1.25 }}><Typography variant="body2" fontWeight={700}>Subtotal</Typography><Typography variant="body2" fontWeight={700}>Q{account.subtotal}</Typography></Stack></Box>)}
       </Stack>
       <Divider sx={{ my: 3 }} />
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>Total</Typography><Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>Q{total}</Typography></Stack>

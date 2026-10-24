@@ -10,6 +10,15 @@ type ApiOrderItem = {
   subtotal: number | string
   menuItemId?: string | null
   extraId?: string | null
+  orderAccountId?: string | null
+}
+
+type ApiOrderAccount = {
+  id: string
+  name: string | null
+  position: number
+  subtotal: number | string
+  items: ApiOrderItem[]
 }
 
 type ApiOrder = {
@@ -24,6 +33,7 @@ type ApiOrder = {
   status: 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
   total: number | string
   items: ApiOrderItem[]
+  accounts?: ApiOrderAccount[]
 }
 
 export type CreateOrderItemInput =
@@ -34,7 +44,8 @@ export type CreateOrderItemInput =
 export type CreateOrderInput = {
   customerName: string
   address: string
-  items: CreateOrderItemInput[]
+  items?: CreateOrderItemInput[]
+  accounts?: Array<{ name?: string; items: CreateOrderItemInput[] }>
   promiseTime: string
 }
 
@@ -49,6 +60,20 @@ function normalizeStatus(status: ApiOrder['status']): OrderStatus {
 }
 
 function normalizeOrder(order: ApiOrder): Order {
+  const normalizeItem = (item: ApiOrderItem) => ({
+    id: item.id,
+    name: item.description,
+    quantity: item.quantity,
+    price: Number(item.unitPrice),
+    subtotal: Number(item.subtotal),
+  })
+  const items = order.items.map(normalizeItem)
+  const accounts = order.accounts?.map((account) => ({
+    id: account.id,
+    name: account.name,
+    items: account.items.map(normalizeItem),
+    subtotal: Number(account.subtotal),
+  })) ?? [{ name: null, items, subtotal: items.reduce((sum, item) => sum + (item.subtotal ?? item.quantity * item.price), 0) }]
   return {
     id: order.id,
     dailyNumber: order.dailyNumber,
@@ -59,11 +84,9 @@ function normalizeOrder(order: ApiOrder): Order {
     createdAt: formatTime(order.createdAt),
     promiseTime: formatTime(order.promiseTime),
     status: normalizeStatus(order.status),
-    items: order.items.map((item) => ({
-      name: item.description,
-      quantity: item.quantity,
-      price: Number(item.unitPrice),
-    })),
+    total: Number(order.total),
+    items,
+    accounts,
   }
 }
 

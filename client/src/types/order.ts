@@ -1,9 +1,18 @@
 export type OrderStatus = 'in-progress' | 'completed' | 'cancelled'
 
 export type OrderItem = {
+  id?: string
   name: string
   quantity: number
   price: number
+  subtotal?: number
+}
+
+export type OrderAccount = {
+  id?: string
+  name?: string | null
+  items: OrderItem[]
+  subtotal: number
 }
 
 export type Order = {
@@ -16,7 +25,9 @@ export type Order = {
   createdAt: string
   promiseTime: string
   status: OrderStatus
+  total?: number
   items: OrderItem[]
+  accounts: OrderAccount[]
 }
 
 export function displayOrderNumber(order: Pick<Order, 'id' | 'displayNumber'>) {
@@ -30,5 +41,4 @@ export function addMinutesToTime(time: string, minutes: number) {
   return date.toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
-export const orderTotal = (order: Order) =>
-  order.items.reduce((total, item) => total + item.quantity * item.price, 0)
+export const orderTotal = (order: Order) => order.total ?? order.accounts.reduce((total, account) => total + account.subtotal, 0)

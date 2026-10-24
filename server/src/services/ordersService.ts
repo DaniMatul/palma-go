@@ -11,10 +11,15 @@ export type CreateOrderItemInput = {
   quantity: number
 }
 
+export type CreateOrderAccountInput = {
+  name?: string
+  items: CreateOrderItemInput[]
+}
+
 export type CreateOrderInput = {
   customerName: string
   address: string
-  items: CreateOrderItemInput[]
+  accounts: CreateOrderAccountInput[] | { items: CreateOrderItemInput[] }
   promiseTime?: Date
 }
 
@@ -75,14 +80,21 @@ export class ActiveDailyMenuNotFoundError extends Error {
   }
 }
 
-const orderInclude = { items: true } satisfies Prisma.OrderInclude
+const orderInclude = { items: true, accounts: { include: { items: true } } } satisfies Prisma.OrderInclude
 
 export function formatOrderNumber(dailyNumber: number) {
   return `P${String(dailyNumber).padStart(2, '0')}`
 }
 
 function serializeOrder(order: Prisma.OrderGetPayload<{ include: typeof orderInclude }>) {
-  return { ...order, displayNumber: formatOrderNumber(order.dailyNumber) }
+  return {
+    ...order,
+    displayNumber: formatOrderNumber(order.dailyNumber),
+    accounts: order.accounts.map((account) => ({
+      ...account,
+      subtotal: account.items.reduce((sum, item) => sum.add(item.subtotal), new Prisma.Decimal(0)),
+    })),
+  }
 }
 
 async function createOrderTransaction(input: CreateOrderInput) {
@@ -95,37 +107,40 @@ async function createOrderTransaction(input: CreateOrderInput) {
       include: { items: { where: { active: true }, include: { menuItem: true } } },
     })
     if (!dailyMenu) throw new ActiveDailyMenuNotFoundError()
+    const accounts: CreateOrderAccountInput[] = Array.isArray(input.accounts) ? input.accounts : [input.accounts]
+    if (accounts.length === 0 || accounts.some((account) => account.items.length === 0)) throw new OrderValidationError('Cada pedido debe tener al menos una cuenta con productos')
     const dailyItemsByMenuId = new Map(dailyMenu?.items.map((item) => [item.menuItemId, item]) ?? [])
-    const extraIds = [...new Set(input.items.filter((item) => item.type === OrderItemType.EXTRA).map((item) => item.extraId).filter((id): id is string => Boolean(id)))]
+    const allItems = accounts.flatMap((account) => account.items)
+    const extraIds = [...new Set(allItems.filter((item) => item.type === OrderItemType.EXTRA).map((item) => item.extraId).filter((id): id is string => Boolean(id)))]
     const extras = await transaction.extra.findMany({ where: { id: { in: extraIds }, active: true } })
     const extrasById = new Map(extras.map((extra) => [extra.id, extra]))
     const menuQuantities = new Map<string, number>()
-    const orderItems: Array<{ type: OrderItemType; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuItemId?: string; extraId?: string; dailyMenuItemId?: string }> = []
+    const orderItems: Array<{ accountIndex: number; type: OrderItemType; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuItemId?: string; extraId?: string; dailyMenuItemId?: string }> = []
 
-    for (const item of input.items) {
+    accounts.forEach((account, accountIndex) => account.items.forEach((item) => {
       if (item.type === OrderItemType.MENU) {
         if (!item.menuItemId) throw new OrderValidationError('menuItemId es obligatorio para items MENU')
         const dailyItem = dailyItemsByMenuId.get(item.menuItemId)
         if (!dailyItem) throw new OrderItemNotFoundError('El menú no está disponible en el menú del día actual')
         menuQuantities.set(item.menuItemId, (menuQuantities.get(item.menuItemId) ?? 0) + item.quantity)
         const unitPrice = new Prisma.Decimal(dailyItem.price)
-        orderItems.push({ type: item.type, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuItemId: item.menuItemId, dailyMenuItemId: dailyItem.id })
+        orderItems.push({ accountIndex, type: item.type, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuItemId: item.menuItemId, dailyMenuItemId: dailyItem.id })
       } else if (item.type === OrderItemType.EXTRA) {
         if (!item.extraId) throw new OrderValidationError('extraId es obligatorio para items EXTRA')
         const extra = extrasById.get(item.extraId)
         if (!extra) throw new OrderItemNotFoundError('El extra no existe o no está activo')
         const unitPrice = new Prisma.Decimal(extra.price)
-        orderItems.push({ type: item.type, description: extra.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), extraId: item.extraId })
+        orderItems.push({ accountIndex, type: item.type, description: extra.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), extraId: item.extraId })
       } else if (item.type === OrderItemType.CUSTOM) {
         const description = item.description?.trim() ?? ''
         if (!description) throw new OrderValidationError('description es obligatorio para items CUSTOM')
         if (item.unitPrice === undefined || !Number.isFinite(item.unitPrice) || item.unitPrice <= 0) throw new OrderValidationError('unitPrice debe ser mayor que 0 para items CUSTOM')
         const unitPrice = new Prisma.Decimal(item.unitPrice)
-        orderItems.push({ type: item.type, description, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity) })
+        orderItems.push({ accountIndex, type: item.type, description, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity) })
       } else {
         throw new OrderValidationError('type de item no válido')
       }
-    }
+    }))
 
     for (const [menuItemId, quantity] of menuQuantities) {
       const dailyItem = dailyItemsByMenuId.get(menuItemId)
@@ -147,7 +162,12 @@ async function createOrderTransaction(input: CreateOrderInput) {
     const lastOrder = await transaction.order.findFirst({ where: { orderDate: businessDate }, orderBy: { dailyNumber: 'desc' }, select: { dailyNumber: true } })
     const dailyNumber = (lastOrder?.dailyNumber ?? 0) + 1
     const order = await transaction.order.create({ data: { customerName: input.customerName, address: input.address, createdAt, promiseTime, orderDate: businessDate, dailyNumber, total, dailyMenuId: dailyMenu.id } })
-    await transaction.orderItem.createMany({ data: orderItems.map((item) => ({ ...item, orderId: order.id })) })
+    const createdAccounts: Array<{ id: string }> = []
+    for (const [position, account] of accounts.entries()) {
+      const createdAccount = await transaction.orderAccount.create({ data: { orderId: order.id, name: account.name || null, position: position + 1 } })
+      createdAccounts.push(createdAccount)
+    }
+    await transaction.orderItem.createMany({ data: orderItems.map(({ accountIndex, ...item }) => ({ ...item, orderId: order.id, orderAccountId: createdAccounts[accountIndex].id })) })
 
     return serializeOrder(await transaction.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude }))
   })
