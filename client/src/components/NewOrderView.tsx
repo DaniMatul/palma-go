@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AddCircleOutlineRounded, DeleteOutlineRounded, PersonAddAltRounded } from '@mui/icons-material'
-import { Alert, Box, Button, Card, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid, Snackbar, Stack, TextField, Typography } from '@mui/material'
+import { AddCircleOutlineRounded, MoreVertRounded, PersonAddAltRounded } from '@mui/icons-material'
+import { Alert, Box, Button, Card, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid, IconButton, Menu, MenuItem, Snackbar, Stack, TextField, Typography } from '@mui/material'
 import { getDailyMenu } from '../services/dailyMenuService'
 import { getExtras } from '../services/extraService'
 import { createOrder, CreateOrderInput } from '../services/orderService'
@@ -71,6 +71,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [notification, setNotification] = useState<{ severity: 'success' | 'error'; message: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [accountErrorId, setAccountErrorId] = useState<string | null>(null)
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
   const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0]
   const getAccountItems = (account: AccountDraft) => [
     ...menus.filter((product) => (account.quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: account.quantities[product.id] })),
@@ -120,8 +122,30 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     if (accounts.length === 1) return
     const next = accounts.filter((account) => account.id !== id)
     setAccounts(next)
+    setEditingAccountId((current) => current === id ? null : current)
+    setAccountMenuAnchor(null)
     if (id === accountErrorId) setAccountErrorId(null)
     if (id === activeAccountId) setActiveAccountId(next[0].id)
+  }
+
+  const selectAccount = (id: string) => {
+    if (id === activeAccountId) {
+      setEditingAccountId(id)
+      return
+    }
+    setActiveAccountId(id)
+    setEditingAccountId(null)
+  }
+
+  const startRename = (id: string) => {
+    setActiveAccountId(id)
+    setEditingAccountId(id)
+    setAccountMenuAnchor(null)
+  }
+
+  const saveAccountName = (id: string, name: string) => {
+    setAccounts((current) => current.map((account) => account.id === id ? { ...account, name: name.trim() } : account))
+    setEditingAccountId((current) => current === id ? null : current)
   }
 
   const handleCreate = async () => {
@@ -176,6 +200,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       setAccounts([createAccount(menus, 0)])
       setActiveAccountId('')
       setAccountErrorId(null)
+      setEditingAccountId(null)
+      setAccountMenuAnchor(null)
       setCreatedAt(getCurrentTime())
       const nextPromise = getDefaultPromise()
       setPromiseDate(nextPromise.date)
@@ -205,6 +231,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     setAccounts([createAccount(menus, 0)])
     setActiveAccountId('')
     setAccountErrorId(null)
+    setEditingAccountId(null)
+    setAccountMenuAnchor(null)
     setCreatedAt(getCurrentTime())
     setPromiseDate(nextPromise.date)
     setPromiseTime(nextPromise.time)
@@ -229,9 +257,30 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
               <TextField fullWidth label="Dirección" value={address} onChange={(event) => setAddress(event.target.value)} inputProps={{ maxLength: 120 }} />
             </Stack>
             <Box>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>Menú principal</Typography><Button size="small" startIcon={<PersonAddAltRounded />} onClick={addAccount}>Agregar cuenta</Button></Stack>
-              <Stack direction="row" spacing={1} sx={{ mb: 2, overflowX: 'auto' }}>{accounts.map((account, index) => <Button key={account.id} color={accountErrorId === account.id ? 'error' : 'primary'} variant={account.id === activeAccount?.id ? 'contained' : 'outlined'} onClick={() => setActiveAccountId(account.id)} sx={{ whiteSpace: 'nowrap' }}>Cuenta {index + 1}{account.name.trim() ? ` · ${account.name.trim()}` : ''}{accounts.length > 1 && <DeleteOutlineRounded sx={{ ml: 0.5, fontSize: 18 }} onClick={(event) => { event.stopPropagation(); removeAccount(account.id) }} />}</Button>)}</Stack>
-              {activeAccount && <TextField fullWidth size="small" label="Nombre de cuenta (opcional)" value={activeAccount.name} error={accountErrorId === activeAccount.id} helperText={accountErrorId === activeAccount.id ? 'Agrega un producto o elimina la cuenta.' : undefined} onChange={(event) => setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, name: event.target.value } : account))} inputProps={{ maxLength: 80 }} sx={{ mb: 2 }} />}
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5} sx={{ mb: 1.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>Menú principal</Typography>
+              </Stack>
+              <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 2, overflowX: 'auto', p: 0.5, bgcolor: 'background.secondary', borderRadius: 2 }}>
+                {accounts.map((account, index) => {
+                  const isActive = account.id === activeAccount?.id
+                  const accountLabel = account.name.trim() || `Cuenta ${index + 1}`
+                  const accountControl = editingAccountId === account.id
+                    ? <TextField autoFocus size="small" value={account.name} error={accountErrorId === account.id} placeholder={accountLabel} onClick={(event) => event.stopPropagation()} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, name: event.target.value } : item))} onBlur={() => saveAccountName(account.id, account.name)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveAccountName(account.id, account.name) } }} inputProps={{ 'aria-label': `Nombre de la cuenta ${index + 1}`, maxLength: 80 }} sx={{ width: 132, '& .MuiInputBase-root': { minHeight: 36, bgcolor: 'background.paper' }, '& input': { py: 0.75, px: 1.25 } }} />
+                    : <Button color={accountErrorId === account.id ? 'error' : 'primary'} variant="text" onClick={() => selectAccount(account.id)} sx={{ minHeight: 36, px: 1.5, whiteSpace: 'nowrap', borderRadius: 1.5, fontWeight: isActive ? 800 : 600, '&:hover': { bgcolor: 'rgba(98, 105, 184, 0.06)' } }}>{accountLabel}</Button>
+
+                  return <Stack key={account.id} direction="row" alignItems="center" sx={{ flexShrink: 0, borderRadius: 1.5, bgcolor: isActive ? 'background.paper' : 'transparent', boxShadow: isActive ? '0 2px 8px rgba(70, 75, 130, 0.10)' : 'none' }}>
+                    {accountControl}
+                    {isActive && <>
+                      <IconButton size="small" aria-label="Opciones de cuenta" onClick={(event) => { event.stopPropagation(); setAccountMenuAnchor(event.currentTarget) }} sx={{ mr: 0.25, color: 'text.secondary', minWidth: 30, minHeight: 30 }}><MoreVertRounded fontSize="small" /></IconButton>
+                      <Menu anchorEl={accountMenuAnchor} open={Boolean(accountMenuAnchor)} onClose={() => setAccountMenuAnchor(null)}>
+                        <MenuItem onClick={() => startRename(account.id)}>Renombrar</MenuItem>
+                        <MenuItem onClick={() => removeAccount(account.id)}>Eliminar cuenta</MenuItem>
+                      </Menu>
+                    </>}
+                  </Stack>
+                })}
+                <Button size="small" startIcon={<PersonAddAltRounded />} onClick={addAccount} sx={{ minHeight: 36, px: 1.25, whiteSpace: 'nowrap', borderLeft: '1px solid', borderColor: 'divider', borderRadius: 0 }}>Nueva cuenta</Button>
+              </Stack>
               <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={activeAccount?.quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
                 <Card elevation={0} sx={{ flex: 1, border: '1px dashed', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
