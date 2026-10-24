@@ -1,4 +1,4 @@
-import { OrderStatus, OrderItemType, Prisma } from '@prisma/client'
+import { CustomizationAction, MenuOrderMode, OrderStatus, OrderItemType, Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { businessDateFromString, todayBusinessDate } from './dailyMenuService.js'
 
@@ -9,6 +9,9 @@ export type CreateOrderItemInput = {
   description?: string
   unitPrice?: number
   quantity: number
+  comment?: string
+  customizations?: Array<{ componentId: string; action: CustomizationAction; quantity: number }>
+  menuMode?: MenuOrderMode
 }
 
 export type CreateOrderAccountInput = {
@@ -80,7 +83,8 @@ export class ActiveDailyMenuNotFoundError extends Error {
   }
 }
 
-const orderInclude = { items: true, accounts: { include: { items: true } } } satisfies Prisma.OrderInclude
+const orderItemInclude = { customizations: true, dailyMenuItem: { include: { components: { where: { active: true }, orderBy: { position: 'asc' } } } } } satisfies Prisma.OrderItemInclude
+const orderInclude = { items: { include: orderItemInclude }, accounts: { include: { items: { include: orderItemInclude } } } } satisfies Prisma.OrderInclude
 
 export function formatOrderNumber(dailyNumber: number) {
   return `P${String(dailyNumber).padStart(2, '0')}`
@@ -104,7 +108,7 @@ async function createOrderTransaction(input: CreateOrderInput) {
   return prisma.$transaction(async (transaction) => {
     const dailyMenu = await transaction.dailyMenu.findFirst({
       where: { date: businessDate, status: 'ACTIVE' },
-      include: { items: { where: { active: true }, include: { menuItem: true } } },
+      include: { items: { where: { active: true }, include: { menuItem: true, components: { where: { active: true }, orderBy: { position: 'asc' } } } } },
     })
     if (!dailyMenu) throw new ActiveDailyMenuNotFoundError()
     const accounts: CreateOrderAccountInput[] = Array.isArray(input.accounts) ? input.accounts : [input.accounts]
@@ -115,7 +119,7 @@ async function createOrderTransaction(input: CreateOrderInput) {
     const extras = await transaction.extra.findMany({ where: { id: { in: extraIds }, active: true } })
     const extrasById = new Map(extras.map((extra) => [extra.id, extra]))
     const menuQuantities = new Map<string, number>()
-    const orderItems: Array<{ accountIndex: number; type: OrderItemType; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuItemId?: string; extraId?: string; dailyMenuItemId?: string }> = []
+    const orderItems: Array<{ accountIndex: number; type: OrderItemType; menuMode?: MenuOrderMode; description: string; quantity: number; unitPrice: Prisma.Decimal; subtotal: Prisma.Decimal; menuComponentsSnapshot?: string; menuItemId?: string; extraId?: string; dailyMenuItemId?: string; comment?: string; customizations?: Array<{ dailyMenuComponentId: string; componentName: string; action: CustomizationAction; quantity: number; unitPrice: Prisma.Decimal }> }> = []
 
     accounts.forEach((account, accountIndex) => account.items.forEach((item) => {
       if (item.type === OrderItemType.MENU) {
@@ -123,15 +127,37 @@ async function createOrderTransaction(input: CreateOrderInput) {
         const dailyItem = dailyItemsByMenuId.get(item.menuItemId)
         if (!dailyItem) throw new OrderItemNotFoundError('El menú no está disponible en el menú del día actual')
         menuQuantities.set(item.menuItemId, (menuQuantities.get(item.menuItemId) ?? 0) + item.quantity)
-        const unitPrice = new Prisma.Decimal(dailyItem.price)
-        orderItems.push({ accountIndex, type: item.type, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuItemId: item.menuItemId, dailyMenuItemId: dailyItem.id })
+        const menuMode = item.menuMode ?? MenuOrderMode.FULL
+        if (menuMode === MenuOrderMode.INDIVIDUAL && item.customizations?.length) throw new OrderValidationError('El principal individual no admite personalizaciones')
+        if (menuMode === MenuOrderMode.INDIVIDUAL && dailyItem.individualPrice === null) throw new OrderValidationError(`El principal individual de ${dailyItem.menuItem.name} no tiene precio configurado`)
+        const componentById = new Map(dailyItem.components.map((component) => [component.id, component]))
+        const usedComponents = new Set<string>()
+        let unitPrice = new Prisma.Decimal(menuMode === MenuOrderMode.INDIVIDUAL ? dailyItem.individualPrice! : dailyItem.price)
+        const customizations = (item.customizations ?? []).map((customization) => {
+          const component = componentById.get(customization.componentId)
+          if (!component) throw new OrderValidationError('La personalización no pertenece al menú seleccionado')
+          if (usedComponents.has(component.id)) throw new OrderValidationError('No se puede personalizar dos veces el mismo componente')
+          usedComponents.add(component.id)
+          if (customization.action === CustomizationAction.REMOVE) {
+            if (!component.removable) throw new OrderValidationError(`El componente ${component.name} no se puede quitar`)
+            if (customization.quantity !== 1) throw new OrderValidationError('Un componente solo puede quitarse una vez')
+            return { dailyMenuComponentId: component.id, componentName: component.name, action: customization.action, quantity: 1, unitPrice: new Prisma.Decimal(0) }
+          }
+          if (!component.allowsExtraPortion) throw new OrderValidationError(`El componente ${component.name} no permite porción adicional`)
+          const extraPrice = new Prisma.Decimal(component.extraPortionPrice)
+          unitPrice = unitPrice.add(extraPrice.mul(customization.quantity))
+          return { dailyMenuComponentId: component.id, componentName: component.name, action: customization.action, quantity: customization.quantity, unitPrice: extraPrice }
+        })
+        orderItems.push({ accountIndex, type: item.type, menuMode, description: dailyItem.menuItem.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), menuComponentsSnapshot: JSON.stringify(menuMode === MenuOrderMode.FULL ? dailyItem.components.map((component) => ({ name: component.name })) : []), menuItemId: item.menuItemId, dailyMenuItemId: dailyItem.id, comment: menuMode === MenuOrderMode.FULL ? item.comment : undefined, customizations: menuMode === MenuOrderMode.FULL ? customizations : undefined })
       } else if (item.type === OrderItemType.EXTRA) {
+        if (item.customizations?.length) throw new OrderValidationError('Las personalizaciones solo aplican a items MENU')
         if (!item.extraId) throw new OrderValidationError('extraId es obligatorio para items EXTRA')
         const extra = extrasById.get(item.extraId)
         if (!extra) throw new OrderItemNotFoundError('El extra no existe o no está activo')
         const unitPrice = new Prisma.Decimal(extra.price)
         orderItems.push({ accountIndex, type: item.type, description: extra.name, quantity: item.quantity, unitPrice, subtotal: unitPrice.mul(item.quantity), extraId: item.extraId })
       } else if (item.type === OrderItemType.CUSTOM) {
+        if (item.customizations?.length) throw new OrderValidationError('Las personalizaciones solo aplican a items MENU')
         const description = item.description?.trim() ?? ''
         if (!description) throw new OrderValidationError('description es obligatorio para items CUSTOM')
         if (item.unitPrice === undefined || !Number.isFinite(item.unitPrice) || item.unitPrice <= 0) throw new OrderValidationError('unitPrice debe ser mayor que 0 para items CUSTOM')
@@ -167,7 +193,10 @@ async function createOrderTransaction(input: CreateOrderInput) {
       const createdAccount = await transaction.orderAccount.create({ data: { orderId: order.id, name: account.name || null, position: position + 1 } })
       createdAccounts.push(createdAccount)
     }
-    await transaction.orderItem.createMany({ data: orderItems.map(({ accountIndex, ...item }) => ({ ...item, orderId: order.id, orderAccountId: createdAccounts[accountIndex].id })) })
+    for (const { accountIndex, customizations, ...item } of orderItems) {
+      const createdItem = await transaction.orderItem.create({ data: { ...item, orderId: order.id, orderAccountId: createdAccounts[accountIndex].id, customizations: customizations ? { create: customizations } : undefined } })
+      if (!createdItem) throw new OrderValidationError('No se pudo guardar el detalle de personalización')
+    }
 
     return serializeOrder(await transaction.order.findUniqueOrThrow({ where: { id: order.id }, include: orderInclude }))
   })

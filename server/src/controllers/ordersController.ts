@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { OrderItemType, OrderStatus } from '@prisma/client'
+import { CustomizationAction, MenuOrderMode, OrderItemType, OrderStatus } from '@prisma/client'
 import {
   changeOrderStatus,
   createOrder,
@@ -37,6 +37,23 @@ function parseOrderItems(value: unknown): CreateOrderItemInput[] {
     const quantity = parseQuantity(item.quantity)
     if (type !== OrderItemType.MENU && type !== OrderItemType.EXTRA && type !== OrderItemType.CUSTOM) throw new OrderValidationError('type de item no válido')
     if (quantity === null) throw new OrderValidationError('quantity debe ser un entero mayor que 0')
+    const comment = typeof item.comment === 'string' ? item.comment.trim() : undefined
+    if (comment && comment.length > 250) throw new OrderValidationError('El comentario no puede superar 250 caracteres')
+    const rawCustomizations = item.customizations === undefined ? [] : item.customizations
+    if (!Array.isArray(rawCustomizations)) throw new OrderValidationError('customizations debe ser un array')
+    const menuMode = item.menuMode === undefined ? MenuOrderMode.FULL : item.menuMode
+    if (menuMode !== MenuOrderMode.FULL && menuMode !== MenuOrderMode.INDIVIDUAL) throw new OrderValidationError('menuMode no es válido')
+    const customizations = rawCustomizations.map((rawCustomization) => {
+      if (typeof rawCustomization !== 'object' || rawCustomization === null) throw new OrderValidationError('Cada personalización debe ser un objeto')
+      const customization = rawCustomization as Record<string, unknown>
+      const componentId = typeof customization.componentId === 'string' ? customization.componentId : ''
+      const action = customization.action
+      const customizationQuantity = parseQuantity(customization.quantity)
+      if (!componentId) throw new OrderValidationError('componentId es obligatorio')
+      if (action !== 'REMOVE' && action !== 'ADD') throw new OrderValidationError('action de personalización no es válido')
+      if (customizationQuantity === null) throw new OrderValidationError('quantity de personalización debe ser un entero mayor que 0')
+      return { componentId, action: action as CustomizationAction, quantity: customizationQuantity }
+    })
     return {
       type,
       quantity,
@@ -44,6 +61,9 @@ function parseOrderItems(value: unknown): CreateOrderItemInput[] {
       extraId: typeof item.extraId === 'string' || typeof item.extraId === 'number' ? String(item.extraId) : undefined,
       description: typeof item.description === 'string' ? item.description : undefined,
       unitPrice: item.unitPrice === undefined ? undefined : Number(item.unitPrice),
+      comment: comment || undefined,
+      customizations,
+      menuMode,
     }
   })
 }

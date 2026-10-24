@@ -1,6 +1,7 @@
 import { CancelOutlined, CheckCircleRounded, CloseRounded, ReceiptLongRounded, ReplayRounded } from '@mui/icons-material'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper, Stack, Typography } from '@mui/material'
 import { displayOrderNumber, Order, orderTotal } from '../types/order'
+import { getMenuLinePresentation, isCustomizedMenuLine } from '../utils/menuLinePresentation'
 import { useState } from 'react'
 
 type OrderDetailProps = { order: Order | undefined; onComplete: () => void; onReopen: () => void; onCancel: () => void }
@@ -29,10 +30,13 @@ export function OrderDetail({ order, onComplete, onReopen, onCancel }: OrderDeta
             <Typography sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>Q{account.subtotal}</Typography>
           </Stack>
           <Stack spacing={0.5}>
-            {account.items.map((item, itemIndex) => <Stack key={`${item.id ?? item.name}-${itemIndex}`} direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
-              <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{item.quantity} × Q{item.price}</Typography>
-            </Stack>)}
+            {account.items.map((item, itemIndex) => {
+              const isMenu = Boolean(item.menuItemId)
+              const individual = isMenu && item.menuMode === 'INDIVIDUAL'
+              const customized = isMenu && isCustomizedMenuLine(item)
+              const presentation = isMenu ? getMenuLinePresentation(item) : null
+              return <Box key={`${item.id ?? item.name}-${itemIndex}`} sx={{ py: 0.5 }}><Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}><Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Typography><Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{isMenu ? item.quantity > 1 ? `${item.quantity} × Q${item.price}` : `Q${item.price}` : `${item.quantity} × Q${item.price}`}</Typography></Stack>{isMenu && presentation && <>{individual && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>Principal individual</Typography>}{!individual && !customized && presentation.included.length > 0 && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>{presentation.included.join(' · ')}</Typography>}{customized && presentation.included.length > 0 && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>{presentation.included.join(' · ')}</Typography>}{customized && presentation.additions.map((addition, additionIndex) => <Typography key={`${addition.name}-${additionIndex}`} variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>+ {addition.name} adicional{addition.quantity > 1 ? ` ×${addition.quantity}` : ''} Q{addition.price}</Typography>)}{presentation.comment && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>Nota: {presentation.comment}</Typography>}</>}{!isMenu && item.comment && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', pl: 1 }}>Nota: {item.comment}</Typography>}</Box>
+            })}
           </Stack>
         </Box>)}
       </Stack>

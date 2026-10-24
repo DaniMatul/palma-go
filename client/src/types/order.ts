@@ -5,7 +5,12 @@ export type OrderItem = {
   name: string
   quantity: number
   price: number
+  menuComponents?: Array<{ name: string }>
+  menuItemId?: string
+  menuMode?: 'FULL' | 'INDIVIDUAL'
   subtotal?: number
+  comment?: string
+  customizations?: Array<{ componentName: string; action: 'REMOVE' | 'ADD'; quantity: number; unitPrice: number }>
 }
 
 export type OrderAccount = {

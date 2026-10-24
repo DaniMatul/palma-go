@@ -7,6 +7,7 @@ import { createOrder, CreateOrderInput } from '../services/orderService'
 import { DailyMenuItem, Extra, OrderLine } from '../types/menu'
 import { CustomProductDialog } from './CustomProductDialog'
 import { ExtrasDialog } from './ExtrasDialog'
+import { MenuCustomizationDialog } from './MenuCustomizationDialog'
 import { NewOrderSummary } from './NewOrderSummary'
 import { ProductCard } from './ProductCard'
 
@@ -36,20 +37,18 @@ function toIsoDateTime(date: string, time: string) {
   return getLocalDateTime(date, time).toISOString()
 }
 
-const emptyQuantities = (menus: DailyMenuItem[]) => Object.fromEntries(menus.map((product) => [product.id, 0]))
-
 type NewOrderViewProps = { onOrderCreated?: () => Promise<void> | void }
 
 type AccountDraft = {
   id: string
   name: string
-  quantities: Record<string, number>
+  menuItems: OrderLine[]
   extraItems: OrderLine[]
   customItems: OrderLine[]
 }
 
-function createAccount(menus: DailyMenuItem[], index: number): AccountDraft {
-  return { id: `account-${index}-${Date.now()}`, name: '', quantities: emptyQuantities(menus), extraItems: [], customItems: [] }
+function createAccount(index: number): AccountDraft {
+  return { id: `account-${index}-${Date.now()}`, name: '', menuItems: [], extraItems: [], customItems: [] }
 }
 
 export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
@@ -59,10 +58,12 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [error, setError] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [address, setAddress] = useState('')
-  const [accounts, setAccounts] = useState<AccountDraft[]>(() => [createAccount([], 0)])
+  const [accounts, setAccounts] = useState<AccountDraft[]>(() => [createAccount(0)])
   const [activeAccountId, setActiveAccountId] = useState('')
   const [extrasOpen, setExtrasOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
+  const [customizationProduct, setCustomizationProduct] = useState<DailyMenuItem | null>(null)
+  const [editingCustomization, setEditingCustomization] = useState<{ accountId: string; item: OrderLine } | null>(null)
   const [createdAt, setCreatedAt] = useState(getCurrentTime)
   const [promiseDate, setPromiseDate] = useState(() => getDefaultPromise().date)
   const [promiseTime, setPromiseTime] = useState(() => getDefaultPromise().time)
@@ -74,12 +75,15 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
   const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
   const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0]
-  const getAccountItems = (account: AccountDraft) => [
-    ...menus.filter((product) => (account.quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: account.quantities[product.id] })),
+  const getAccountItems = (account: AccountDraft): OrderLine[] => [
+    ...account.menuItems,
     ...account.extraItems,
     ...account.customItems,
   ]
   const accountSummaries = useMemo(() => accounts.map((account) => ({ id: account.id, name: account.name, items: getAccountItems(account) })), [accounts, menus])
+  const getDraftMenuQuantity = (menuItemId: string, excludedLineId?: string) => accounts.reduce((sum, account) => {
+    return sum + account.menuItems.filter((item) => item.menuItemId === menuItemId && item.id !== excludedLineId).reduce((lineSum, item) => lineSum + item.quantity, 0)
+  }, 0)
 
   useEffect(() => {
     let cancelled = false
@@ -90,7 +94,6 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
         if (cancelled) return
         setMenus(dailyMenu.items)
         setExtras(loadedExtras)
-        setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(dailyMenu.items) })))
         setActiveAccountId((current) => current || accounts[0]?.id || '')
       })
       .catch((requestError: unknown) => {
@@ -100,20 +103,69 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     return () => { cancelled = true }
   }, [])
 
-  const changeQuantity = (product: DailyMenuItem, amount: number) => {
+  const addNormalMenu = (product: DailyMenuItem) => {
     setNotification(null)
     if (!activeAccount) return
+    if (getDraftMenuQuantity(product.menuItemId) >= product.remainingQuantity) {
+      setNotification({ severity: 'error', message: `No hay disponibilidad para agregar ${product.name}.` })
+      return
+    }
     if (accountErrorId === activeAccount.id) setAccountErrorId(null)
-    setAccounts((current) => current.map((account) => {
-      if (account.id !== activeAccount.id) return account
-      const currentQuantity = account.quantities[product.id] ?? 0
-      const nextQuantity = Math.max(0, Math.min(product.remainingQuantity, currentQuantity + amount))
-      return { ...account, quantities: { ...account.quantities, [product.id]: nextQuantity } }
-    }))
+    const item: OrderLine = { id: `normal-${product.menuItemId}-${Date.now()}`, menuItemId: product.menuItemId, menuComponents: product.components.map((component) => ({ name: component.name })), name: product.name, price: product.price, quantity: 1 }
+    setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, menuItems: [...account.menuItems, item] } : account))
+  }
+
+  const addIndividualMenu = (product: DailyMenuItem) => {
+    setNotification(null)
+    if (!activeAccount || product.individualPrice === null) return
+    if (getDraftMenuQuantity(product.menuItemId) >= product.remainingQuantity) {
+      setNotification({ severity: 'error', message: `No hay disponibilidad para agregar ${product.name}.` })
+      return
+    }
+    if (accountErrorId === activeAccount.id) setAccountErrorId(null)
+    const item: OrderLine = { id: `individual-${product.menuItemId}-${Date.now()}`, menuItemId: product.menuItemId, menuMode: 'INDIVIDUAL', name: product.name, price: product.individualPrice, quantity: 1 }
+    setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, menuItems: [...account.menuItems, item] } : account))
+  }
+
+  const deleteMenuLine = (accountId: string, item: OrderLine) => {
+    setAccounts((current) => current.map((account) => account.id === accountId ? { ...account, menuItems: account.menuItems.filter((line) => line.id !== item.id) } : account))
+  }
+
+  const openCustomization = (product: DailyMenuItem, item?: OrderLine, accountId = activeAccount?.id) => {
+    if (!accountId) return
+    setActiveAccountId(accountId)
+    setEditingCustomization(item ? { accountId, item } : null)
+    setCustomizationProduct(product)
+  }
+
+  const confirmCustomization = (item: OrderLine) => {
+    if (!customizationProduct || !activeAccount) return
+    setNotification(null)
+    const editing = editingCustomization
+    const hasCustomization = Boolean(item.comment?.trim() || item.customizations?.length)
+    if (editing) {
+      setAccounts((current) => current.map((account) => {
+        if (account.id !== editing.accountId) return account
+        if (!hasCustomization) {
+      const product = menus.find((menu) => menu.menuItemId === item.menuItemId)
+          if (!product) return account
+          const normalItem: OrderLine = { id: `normal-${product.menuItemId}-${Date.now()}`, menuItemId: product.menuItemId, menuComponents: product.components.map((component) => ({ name: component.name })), name: product.name, price: product.price, quantity: 1 }
+          return { ...account, menuItems: [...account.menuItems.filter((line) => line.id !== editing.item.id), normalItem] }
+        }
+        return { ...account, menuItems: account.menuItems.map((line) => line.id === editing.item.id ? item : line) }
+      }))
+    } else if (getDraftMenuQuantity(customizationProduct.menuItemId) < customizationProduct.remainingQuantity) {
+      setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, menuItems: [...account.menuItems, item] } : account))
+    } else {
+      setNotification({ severity: 'error', message: `No hay disponibilidad para agregar ${customizationProduct.name}.` })
+    }
+    setCustomizationProduct(null)
+    setEditingCustomization(null)
+    setAccountErrorId(null)
   }
 
   const addAccount = () => {
-    const account = createAccount(menus, accounts.length)
+    const account = createAccount(accounts.length)
     setAccounts((current) => [...current, account])
     setActiveAccountId(account.id)
   }
@@ -183,8 +235,8 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       accounts: accountSummaries.map((account) => ({
         name: account.name.trim() || undefined,
         items: account.items.map((item) => {
-          const menu = menus.find((product) => product.menuItemId === item.id)
-          if (menu) return { type: 'MENU' as const, menuItemId: menu.menuItemId, quantity: item.quantity }
+          const menu = item.menuItemId ? menus.find((product) => product.menuItemId === item.menuItemId) : undefined
+          if (menu) return { type: 'MENU' as const, menuItemId: menu.menuItemId, menuMode: item.menuMode, quantity: item.quantity, comment: item.comment, customizations: item.customizations?.map((customization) => ({ componentId: customization.componentId ?? '', action: customization.action, quantity: customization.quantity })) }
           const extra = extras.find((product) => product.id === item.id)
           if (extra) return { type: 'EXTRA' as const, extraId: extra.id, quantity: item.quantity }
           return { type: 'CUSTOM' as const, description: item.name, unitPrice: item.price, quantity: item.quantity }
@@ -197,7 +249,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       setNotification({ severity: 'success', message: 'Pedido creado correctamente' })
       setCustomerName('')
       setAddress('')
-      setAccounts([createAccount(menus, 0)])
+      setAccounts([createAccount(0)])
       setActiveAccountId('')
       setAccountErrorId(null)
       setEditingAccountId(null)
@@ -210,7 +262,6 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       try {
         const latestMenu = await getDailyMenu()
         setMenus(latestMenu.items)
-        setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(latestMenu.items) })))
         await onOrderCreated?.()
       } catch {
         console.error('No se pudo actualizar el menú del día después de crear el pedido')
@@ -228,7 +279,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     const nextPromise = getDefaultPromise()
     setCustomerName('')
     setAddress('')
-    setAccounts([createAccount(menus, 0)])
+    setAccounts([createAccount(0)])
     setActiveAccountId('')
     setAccountErrorId(null)
     setEditingAccountId(null)
@@ -281,7 +332,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
                 })}
                 <Button size="small" startIcon={<PersonAddAltRounded />} onClick={addAccount} sx={{ minHeight: 36, px: 1.25, whiteSpace: 'nowrap', borderLeft: '1px solid', borderColor: 'divider', borderRadius: 0 }}>Nueva cuenta</Button>
               </Stack>
-              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={activeAccount?.quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
+              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} remainingQuantityOverride={Math.max(0, product.remainingQuantity - getDraftMenuQuantity(product.menuItemId))} addDisabled={getDraftMenuQuantity(product.menuItemId) >= product.remainingQuantity} onAdd={() => addNormalMenu(product)} onCustomize={product.components.length > 0 ? () => openCustomization(product) : undefined} individualPrice={product.individualPrice} onAddIndividual={product.individualPrice !== null ? () => addIndividualMenu(product) : undefined} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
                 <Card elevation={0} sx={{ flex: 1, border: '1px dashed', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
                   <Button fullWidth size="large" startIcon={<AddCircleOutlineRounded />} onClick={() => setExtrasOpen(true)} disabled={!activeAccount} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar extras</Button>
@@ -294,11 +345,12 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
           </Stack>
         </Grid>
         <Grid item xs={12} lg={4}>
-          <NewOrderSummary accounts={accountSummaries} createdAt={createdAt} promiseTime={promiseTime} promiseTimeError={promiseTimeError} onPromiseTimeChange={(value) => { setPromiseTime(value); setPromiseDate(getLocalDate(new Date())); setPromiseTimeError('') }} onCreate={handleCreate} onClear={() => setClearDialogOpen(true)} loading={submitting} />
+          <NewOrderSummary accounts={accountSummaries} createdAt={createdAt} promiseTime={promiseTime} promiseTimeError={promiseTimeError} onPromiseTimeChange={(value) => { setPromiseTime(value); setPromiseDate(getLocalDate(new Date())); setPromiseTimeError('') }} onEditCustomization={(accountId, item) => { const product = menus.find((menu) => menu.menuItemId === item.menuItemId); if (product) openCustomization(product, item, accountId) }} onDeleteMenuLine={deleteMenuLine} onCreate={handleCreate} onClear={() => setClearDialogOpen(true)} loading={submitting} />
         </Grid>
       </Grid>
       <ExtrasDialog open={extrasOpen} extras={extras.filter((extra) => extra.active)} onClose={() => setExtrasOpen(false)} onConfirm={(items) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, extraItems: items } : account)); setAccountErrorId(null); setExtrasOpen(false); setNotification(null) }} />
       <CustomProductDialog open={customOpen} onClose={() => setCustomOpen(false)} onAdd={(item) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, customItems: [...account.customItems, item] } : account)); setAccountErrorId(null); setNotification(null) }} />
+      <MenuCustomizationDialog open={Boolean(customizationProduct)} product={customizationProduct} initialItem={editingCustomization?.item} onClose={() => { setCustomizationProduct(null); setEditingCustomization(null) }} onConfirm={confirmCustomization} />
       <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)} aria-labelledby="clear-order-dialog-title">
         <DialogTitle id="clear-order-dialog-title">Limpiar pedido</DialogTitle>
         <DialogContent>

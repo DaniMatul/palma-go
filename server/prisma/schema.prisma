@@ -20,9 +20,19 @@ enum OrderItemType {
   CUSTOM
 }
 
+enum MenuOrderMode {
+  FULL
+  INDIVIDUAL
+}
+
 enum DailyMenuStatus {
   ACTIVE
   CLOSED
+}
+
+enum CustomizationAction {
+  REMOVE
+  ADD
 }
 
 model MenuItem {
@@ -52,6 +62,7 @@ model DailyMenuItem {
   dailyMenuId       String
   menuItemId        String
   price             Decimal     @default(0)
+  individualPrice   Decimal?
   active            Boolean     @default(true)
   availableQuantity Int         @default(0)
   remainingQuantity Int         @default(0)
@@ -59,9 +70,38 @@ model DailyMenuItem {
   revenue           Decimal     @default(0)
   dailyMenu         DailyMenu   @relation(fields: [dailyMenuId], references: [id], onDelete: Cascade)
   menuItem          MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  components        DailyMenuComponent[]
   orderItems        OrderItem[]
 
   @@unique([dailyMenuId, menuItemId])
+}
+
+model DailyMenuComponent {
+  id                 String         @id @default(cuid())
+  dailyMenuItemId    String
+  catalogComponentId String?
+  name               String
+  position           Int            @default(0)
+  active             Boolean        @default(true)
+  removable          Boolean        @default(true)
+  allowsExtraPortion Boolean        @default(false)
+  extraPortionPrice  Decimal        @default(0)
+  dailyMenuItem      DailyMenuItem  @relation(fields: [dailyMenuItemId], references: [id], onDelete: Cascade)
+  catalogComponent   ComponentCatalog? @relation(fields: [catalogComponentId], references: [id], onDelete: SetNull)
+  customizations     OrderItemCustomization[]
+
+  @@index([dailyMenuItemId, position])
+}
+
+model ComponentCatalog {
+  id                       String   @id @default(cuid())
+  name                     String
+  nameNormalized           String   @unique
+  defaultExtraPortionPrice Decimal
+  active                   Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  dailyMenuComponents      DailyMenuComponent[]
 }
 
 model Extra {
@@ -107,10 +147,13 @@ model OrderItem {
   id              String         @id @default(cuid())
   orderId         String
   type            OrderItemType
+  menuMode        MenuOrderMode @default(FULL)
   description     String
   quantity        Int
   unitPrice       Decimal
   subtotal        Decimal
+  comment         String?
+  menuComponentsSnapshot String?
   menuItemId      String?
   extraId         String?
   dailyMenuItemId String?
@@ -120,4 +163,19 @@ model OrderItem {
   menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   extra           Extra?         @relation(fields: [extraId], references: [id], onDelete: Restrict)
   dailyMenuItem   DailyMenuItem? @relation(fields: [dailyMenuItemId], references: [id], onDelete: Restrict)
+  customizations  OrderItemCustomization[]
+}
+
+model OrderItemCustomization {
+  id                  String              @id @default(cuid())
+  orderItemId         String
+  dailyMenuComponentId String?
+  componentName       String
+  action              CustomizationAction
+  quantity            Int                 @default(1)
+  unitPrice           Decimal             @default(0)
+  orderItem           OrderItem           @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  dailyMenuComponent  DailyMenuComponent? @relation(fields: [dailyMenuComponentId], references: [id], onDelete: SetNull)
+
+  @@index([orderItemId])
 }

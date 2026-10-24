@@ -1,6 +1,7 @@
-import { AccessTimeRounded, CheckCircleRounded } from '@mui/icons-material'
-import { Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/material'
+import { AccessTimeRounded, CheckCircleRounded, DeleteOutlineRounded, EditRounded } from '@mui/icons-material'
+import { Box, Button, Divider, IconButton, Paper, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { OrderLine } from '../types/menu'
+import { getMenuLinePresentation, isCustomizedMenuLine } from '../utils/menuLinePresentation'
 
 type NewOrderSummaryProps = {
   accounts: Array<{ id: string; name: string; items: OrderLine[] }>
@@ -8,12 +9,14 @@ type NewOrderSummaryProps = {
   promiseTime: string
   promiseTimeError?: string
   onPromiseTimeChange: (value: string) => void
+  onEditCustomization: (accountId: string, item: OrderLine) => void
+  onDeleteMenuLine: (accountId: string, item: OrderLine) => void
   onCreate: () => void
   onClear: () => void
   loading?: boolean
 }
 
-export function NewOrderSummary({ accounts, createdAt, promiseTime, promiseTimeError, onPromiseTimeChange, onCreate, onClear, loading = false }: NewOrderSummaryProps) {
+export function NewOrderSummary({ accounts, createdAt, promiseTime, promiseTimeError, onPromiseTimeChange, onEditCustomization, onDeleteMenuLine, onCreate, onClear, loading = false }: NewOrderSummaryProps) {
   const total = accounts.reduce((sum, account) => sum + account.items.reduce((accountTotal, item) => accountTotal + item.price * item.quantity, 0), 0)
 
   return (
@@ -29,10 +32,32 @@ export function NewOrderSummary({ accounts, createdAt, promiseTime, promiseTimeE
               <Typography sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>Q{accountTotal}</Typography>
             </Stack>
             <Stack spacing={0.5}>
-              {account.items.length > 0 ? account.items.map((item, itemIndex) => <Stack key={`${item.id}-${itemIndex}`} direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
-                <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{item.quantity} × Q{item.price}</Typography>
-              </Stack>) : <Typography variant="body2" color="text.secondary">Sin productos</Typography>}
+              {account.items.length > 0 ? account.items.map((item, itemIndex) => {
+                const isMenu = Boolean(item.menuItemId)
+                const individual = isMenu && item.menuMode === 'INDIVIDUAL'
+                const customized = isMenu && isCustomizedMenuLine(item)
+                const presentation = isMenu ? getMenuLinePresentation(item) : null
+                return <Box key={`${item.id}-${itemIndex}`} sx={{ py: 0.5, borderBottom: itemIndex < account.items.length - 1 ? '1px solid' : 'none', borderColor: 'divider' }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{isMenu ? `Q${item.price}` : `${item.quantity} × Q${item.price}`}</Typography>
+                  </Stack>
+                  {isMenu && presentation && <>
+                    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1} sx={{ pl: 1 }}>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        {individual && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Principal individual</Typography>}
+                        {presentation.included.length > 0 && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>{presentation.included.join(' · ')}</Typography>}
+                        {customized && presentation.additions.length > 0 && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>{presentation.additions.map((addition) => `+ ${addition.name}${addition.quantity > 1 ? ` ×${addition.quantity}` : ''} Q${addition.price}`).join(' · ')}</Typography>}
+                        {presentation.comment && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Nota: {presentation.comment}</Typography>}
+                      </Box>
+                      <Stack direction="row" spacing={0} sx={{ flexShrink: 0, mt: -0.5 }}>
+                        {customized && <Tooltip title="Editar personalización"><IconButton size="small" aria-label={`Editar personalización de ${item.name}`} onClick={() => onEditCustomization(account.id, item)} disabled={loading}><EditRounded fontSize="small" /></IconButton></Tooltip>}
+                        <Tooltip title="Eliminar unidad"><IconButton size="small" color="error" aria-label={`Eliminar unidad de ${item.name}`} onClick={() => onDeleteMenuLine(account.id, item)} disabled={loading}><DeleteOutlineRounded fontSize="small" /></IconButton></Tooltip>
+                      </Stack>
+                    </Stack>
+                  </>}
+                </Box>
+              }) : <Typography variant="body2" color="text.secondary">Sin productos</Typography>}
             </Stack>
           </Box>
         }) : <Typography color="text.secondary">Aún no has agregado productos.</Typography>}

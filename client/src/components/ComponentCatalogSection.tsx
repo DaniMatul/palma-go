@@ -1,0 +1,9 @@
+import { AddRounded } from '@mui/icons-material'
+import { Box, Button, Card, Grid, Stack, Typography } from '@mui/material'
+import { ComponentCatalog } from '../types/menu'
+
+type Props = { components: ComponentCatalog[]; busy: boolean; onCreate: () => void; onEdit: (component: ComponentCatalog) => void; onToggle: (component: ComponentCatalog) => void }
+
+export function ComponentCatalogSection({ components, busy, onCreate, onEdit, onToggle }: Props) {
+  return <Box sx={{ mt: 4, mb: 3 }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ mb: 2 }}><Box><Typography variant="h5" sx={{ fontWeight: 800 }}>Catálogo de complementos</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Plantillas reutilizables para los menús del día.</Typography></Box><Button variant="contained" startIcon={<AddRounded />} onClick={onCreate} disabled={busy}>Crear complemento</Button></Stack><Grid container spacing={1.5}>{components.map((component) => <Grid item xs={12} sm={6} lg={4} key={component.id}><Card elevation={0} sx={{ p: 1.75, border: '1px solid', borderColor: 'divider', opacity: component.active ? 1 : 0.65 }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography sx={{ fontWeight: 800 }}>{component.name}</Typography><Typography variant="body2" color="text.secondary">Porción adicional · Q{component.defaultExtraPortionPrice}</Typography></Box><Stack direction="row" spacing={0.5}><Button size="small" onClick={() => onEdit(component)} disabled={busy}>Editar</Button><Button size="small" color={component.active ? 'error' : 'primary'} onClick={() => onToggle(component)} disabled={busy}>{component.active ? 'Desactivar' : 'Activar'}</Button></Stack></Stack></Card></Grid>)}</Grid></Box>
+}

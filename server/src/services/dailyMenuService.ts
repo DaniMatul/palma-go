@@ -4,6 +4,17 @@ import { prisma } from '../lib/prisma.js'
 export type DailyMenuItemInput = {
   menuItemId: string
   availableQuantity: number
+  individualPrice?: number | null
+  components: DailyMenuComponentInput[]
+}
+
+export type DailyMenuComponentInput = {
+  id?: string
+  catalogComponentId?: string
+  name: string
+  removable: boolean
+  allowsExtraPortion: boolean
+  extraPortionPrice: number
 }
 
 export class DailyMenuValidationError extends Error {
@@ -59,12 +70,14 @@ function serializeDailyMenu(dailyMenu: {
     id: string
     menuItemId: string
     price: unknown
+    individualPrice: unknown
     active: boolean
     availableQuantity: number
     remainingQuantity: number
     soldQuantity: number
     revenue: unknown
     menuItem: { id: string; name: string; description: string; price: unknown }
+    components: Array<{ id: string; catalogComponentId: string | null; name: string; position: number; active: boolean; removable: boolean; allowsExtraPortion: boolean; extraPortionPrice: unknown }>
   }>
 }) {
   return {
@@ -81,10 +94,12 @@ function serializeDailyMenu(dailyMenu: {
         name: item.menuItem.name,
         description: item.menuItem.description,
         price: item.price,
+        individualPrice: item.individualPrice,
         availableQuantity: item.availableQuantity,
         remainingQuantity: item.remainingQuantity,
         soldQuantity: item.soldQuantity,
         revenue: item.revenue,
+        components: item.components.filter((component) => component.active).sort((a, b) => a.position - b.position).map((component) => ({ ...component, extraPortionPrice: component.extraPortionPrice })),
       })),
   }
 }
@@ -92,6 +107,7 @@ function serializeDailyMenu(dailyMenu: {
 const dailyMenuInclude = {
   items: {
     include: {
+        components: true,
       menuItem: {
         select: { id: true, name: true, description: true, price: true },
       },
@@ -113,14 +129,14 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
     const activeMenuItemIds = new Set(menuItems.map((menuItem) => menuItem.id))
     if (items.some((item) => !activeMenuItemIds.has(item.menuItemId))) throw new DailyMenuMenuItemNotFoundError()
 
-    const existingDailyMenu = await transaction.dailyMenu.findFirst({ where: { date, status: 'ACTIVE' }, include: { items: true } })
+    const existingDailyMenu = await transaction.dailyMenu.findFirst({ where: { date, status: 'ACTIVE' }, include: { items: { include: { components: true } } } })
     if (mode === 'create' || !existingDailyMenu) {
       await transaction.dailyMenu.updateMany({ where: { status: 'ACTIVE' }, data: { status: 'CLOSED' } })
     }
     const created = mode === 'create' || !existingDailyMenu
     const dailyMenu = existingDailyMenu && mode !== 'create'
-      ? await transaction.dailyMenu.update({ where: { id: existingDailyMenu.id }, data: { updatedAt: new Date(), status: 'ACTIVE' }, include: { items: true } })
-      : await transaction.dailyMenu.create({ data: { date, status: 'ACTIVE' }, include: { items: true } })
+      ? await transaction.dailyMenu.update({ where: { id: existingDailyMenu.id }, data: { updatedAt: new Date(), status: 'ACTIVE' }, include: { items: { include: { components: true } } } })
+      : await transaction.dailyMenu.create({ data: { date, status: 'ACTIVE' }, include: { items: { include: { components: true } } } })
 
     const incomingIds = new Set(items.map((item) => item.menuItemId))
     await transaction.dailyMenuItem.updateMany({
@@ -131,12 +147,17 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
     for (const item of items) {
       const menuItem = menuItems.find((candidate) => candidate.id === item.menuItemId)
       if (!menuItem) throw new DailyMenuMenuItemNotFoundError()
+      const catalogIds = item.components.flatMap((component) => component.catalogComponentId ? [component.catalogComponentId] : [])
+      const catalogComponents = await transaction.componentCatalog.findMany({ where: { id: { in: catalogIds }, active: true } })
+      if (catalogComponents.length !== new Set(catalogIds).size) throw new DailyMenuValidationError('Uno o más complementos no existen o están inactivos')
       const existing = dailyMenu.items.find((dailyItem) => dailyItem.menuItemId === item.menuItemId)
+      if (item.individualPrice !== undefined && item.individualPrice !== null && (!Number.isFinite(item.individualPrice) || item.individualPrice <= 0)) throw new DailyMenuValidationError('El precio del principal individual debe ser mayor a 0')
       await transaction.dailyMenuItem.upsert({
         where: { dailyMenuId_menuItemId: { dailyMenuId: dailyMenu.id, menuItemId: item.menuItemId } },
         update: {
           active: true,
-          price: menuItem.price,
+          price: existing?.price ?? menuItem.price,
+          individualPrice: item.individualPrice === undefined ? existing?.individualPrice ?? null : item.individualPrice,
           availableQuantity: item.availableQuantity,
           remainingQuantity: Math.max(0, item.availableQuantity - (existing?.soldQuantity ?? 0)),
         },
@@ -144,6 +165,7 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
           dailyMenuId: dailyMenu.id,
           menuItemId: item.menuItemId,
           price: menuItem.price,
+          individualPrice: item.individualPrice ?? null,
           active: true,
           availableQuantity: item.availableQuantity,
           remainingQuantity: item.availableQuantity,
@@ -151,6 +173,25 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
           revenue: 0,
         },
       })
+
+      const savedDailyItem = await transaction.dailyMenuItem.findUniqueOrThrow({ where: { dailyMenuId_menuItemId: { dailyMenuId: dailyMenu.id, menuItemId: item.menuItemId } }, include: { components: true } })
+      const incomingComponentIds = item.components.flatMap((component) => component.id ? [component.id] : [])
+      const existingComponentIds = new Set(savedDailyItem.components.map((component) => component.id))
+      if (incomingComponentIds.some((id) => !existingComponentIds.has(id))) throw new DailyMenuValidationError('Uno o más componentes no pertenecen al menú del día')
+      await transaction.dailyMenuComponent.deleteMany({ where: { dailyMenuItemId: savedDailyItem.id, id: { notIn: incomingComponentIds } } })
+      for (const [position, component] of item.components.entries()) {
+        const data = {
+          name: component.name.trim(),
+          catalogComponentId: component.catalogComponentId ?? null,
+          position,
+          active: true,
+          removable: component.removable,
+          allowsExtraPortion: component.allowsExtraPortion,
+          extraPortionPrice: component.extraPortionPrice,
+        }
+        if (component.id) await transaction.dailyMenuComponent.update({ where: { id: component.id }, data })
+        else await transaction.dailyMenuComponent.create({ data: { ...data, dailyMenuItemId: savedDailyItem.id } })
+      }
     }
 
     const result = await transaction.dailyMenu.findUniqueOrThrow({ where: { id: dailyMenu.id }, include: dailyMenuInclude })

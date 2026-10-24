@@ -1,19 +1,37 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { AddRounded, CheckCircleRounded, DeleteOutlineRounded, EditRounded, GridView, RemoveRounded, SearchRounded, ViewList } from '@mui/icons-material'
 import { Alert, Box, Button, Card, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Grid, IconButton, InputAdornment, Pagination, Paper, Snackbar, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { createExtra, deleteExtra, getExtras, updateExtra } from '../services/extraService'
+import { createComponentCatalog, getComponentCatalog, updateComponentCatalog } from '../services/componentCatalogService'
 import { createDailyMenu, getDailyMenu, getTodayDate, resetDailyMenu, saveDailyMenu } from '../services/dailyMenuService'
 import { createMenuItem, deleteMenuItem, getMenuItems, updateMenuItem } from '../services/menuService'
-import { DailyMenuItem, Extra, MenuItem } from '../types/menu'
+import { ComponentCatalog, DailyMenuComponentDraft, DailyMenuItem, Extra, MenuItem } from '../types/menu'
 import { ExtraDialog } from './ExtraDialog'
 import { MenuDialog } from './MenuDialog'
+import { DailyMenuComponentsDialog } from './DailyMenuComponentsDialog'
+import { ComponentCatalogDialog } from './ComponentCatalogDialog'
+import { ComponentCatalogSection } from './ComponentCatalogSection'
 
 type ViewMode = 'cards' | 'list'
 type MenuMode = 'view' | 'edit' | 'create'
-type MenuViewItem = MenuItem & { availableToday: boolean; availableQuantity: number; remainingQuantity: number }
+type MenuViewItem = MenuItem & { availableToday: boolean; availableQuantity: number; remainingQuantity: number; individualPrice: number | null }
 
 function dailyMenuSignature(items: DailyMenuItem[]) {
-  return JSON.stringify(items.map(({ menuItemId, availableQuantity }) => ({ menuItemId, availableQuantity })).sort((first, second) => first.menuItemId.localeCompare(second.menuItemId)))
+  return JSON.stringify(items.map(({ menuItemId, availableQuantity, individualPrice, components }) => ({
+    menuItemId,
+    availableQuantity,
+    individualPrice,
+    components: (components ?? []).map(({ id, catalogComponentId, name, position, active, removable, allowsExtraPortion, extraPortionPrice }) => ({
+      id: id ?? null,
+      catalogComponentId: catalogComponentId ?? null,
+      name: name.trim(),
+      position: position ?? 0,
+      active: active ?? true,
+      removable,
+      allowsExtraPortion,
+      extraPortionPrice: Number(extraPortionPrice),
+    })).sort((first, second) => first.position - second.position || first.name.localeCompare(second.name, 'es')),
+  })).sort((first, second) => first.menuItemId.localeCompare(second.menuItemId)))
 }
 
 function getInvalidDailyItems(items: DailyMenuItem[]) {
@@ -31,6 +49,7 @@ function updateMenu(items: MenuItem[], id: string, changes: Partial<MenuItem>) {
 export function MenuManagementView() {
   const [menus, setMenus] = useState<MenuItem[]>([])
   const [extras, setExtras] = useState<Extra[]>([])
+  const [componentCatalog, setComponentCatalog] = useState<ComponentCatalog[]>([])
   const [dailyItems, setDailyItems] = useState<DailyMenuItem[]>([])
   const [dailyDate, setDailyDate] = useState(getTodayDate)
   const [dailyMenuId, setDailyMenuId] = useState<string | null>(null)
@@ -53,6 +72,10 @@ export function MenuManagementView() {
   const [extraDialogOpen, setExtraDialogOpen] = useState(false)
   const [editingExtra, setEditingExtra] = useState<Extra | null>(null)
   const [extraToDelete, setExtraToDelete] = useState<Extra | null>(null)
+  const [componentsMenu, setComponentsMenu] = useState<DailyMenuItem | null>(null)
+  const [catalogDialogOpen, setCatalogDialogOpen] = useState(false)
+  const [editingCatalogComponent, setEditingCatalogComponent] = useState<ComponentCatalog | null>(null)
+  const [editingIndividualPriceId, setEditingIndividualPriceId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -62,9 +85,10 @@ export function MenuManagementView() {
     setLoading(true)
     setError('')
     try {
-      const [menuItems, extraItems, dailyMenu] = await Promise.all([getMenuItems(), getExtras(), getDailyMenu()])
+      const [menuItems, extraItems, dailyMenu, catalogItems] = await Promise.all([getMenuItems(), getExtras(), getDailyMenu(), getComponentCatalog()])
       setMenus(menuItems)
       setExtras(extraItems)
+      setComponentCatalog(catalogItems)
       setDailyItems(dailyMenu.items)
       setDailyDate(dailyMenu.date)
       setDailyMenuId(dailyMenu.id)
@@ -92,7 +116,7 @@ export function MenuManagementView() {
   }, [extras, search])
   const toViewMenu = (menu: MenuItem): MenuViewItem => {
     const dailyItem = dailyItems.find((item) => item.menuItemId === menu.id)
-    return { ...menu, availableToday: Boolean(dailyItem), availableQuantity: dailyItem?.availableQuantity ?? 0, remainingQuantity: dailyItem?.remainingQuantity ?? 0 }
+    return { ...menu, availableToday: Boolean(dailyItem), availableQuantity: dailyItem?.availableQuantity ?? 0, remainingQuantity: dailyItem?.remainingQuantity ?? 0, individualPrice: dailyItem?.individualPrice ?? null }
   }
   const activeMenus = filteredMenus.map(toViewMenu).filter((menu) => menu.availableToday)
   const pageSize = viewMode === 'cards' ? 12 : 20
@@ -127,7 +151,7 @@ export function MenuManagementView() {
 
   const addToToday = (menu: MenuViewItem) => {
     if (menuMode === 'view' || menu.availableToday || !menu.active) return
-    setDailyItems((current) => [...current, { id: `local-${menu.id}`, menuItemId: menu.id, name: menu.name, description: menu.description, price: menu.price, availableQuantity: 0, remainingQuantity: 0 }])
+    setDailyItems((current) => [...current, { id: `local-${menu.id}`, menuItemId: menu.id, name: menu.name, description: menu.description, price: menu.price, individualPrice: null, availableQuantity: 0, remainingQuantity: 0, components: [] }])
     setMessage('Menú agregado a la edición del día.')
   }
 
@@ -158,8 +182,14 @@ export function MenuManagementView() {
     setDailyItems((current) => current.map((item) => item.menuItemId === menu.id ? { ...item, availableQuantity: 0, remainingQuantity: 0 } : item))
   }
 
+  const changeIndividualPrice = (menu: MenuViewItem, value: string) => {
+    if (menuMode === 'view') return
+    const individualPrice = value === '' ? null : Number(value)
+    setDailyItems((current) => current.map((item) => item.menuItemId === menu.id ? { ...item, individualPrice: Number.isFinite(individualPrice) ? individualPrice : null } : item))
+  }
+
   const saveCurrentDailyMenu = (replaced: boolean) => runAction(async () => {
-    const payload = dailyItems.map(({ menuItemId, availableQuantity }) => ({ menuItemId, availableQuantity }))
+    const payload = dailyItems.map(({ menuItemId, availableQuantity, individualPrice, components }) => ({ menuItemId, availableQuantity, individualPrice, components }))
     const saved = dailyMenuId ? await saveDailyMenu(dailyDate, payload) : await createDailyMenu(dailyDate, payload)
     console.log('PUT updatedAt:', saved.updatedAt)
     const refreshed = await getDailyMenu(dailyDate)
@@ -173,6 +203,37 @@ export function MenuManagementView() {
     setQuantityDrafts({})
     setMenuMode('view')
   }, replaced ? 'Menú del día actualizado correctamente.' : 'Menú del día guardado correctamente.')
+
+  const saveComponentsForMenu = async (components: DailyMenuComponentDraft[]) => {
+    if (!componentsMenu || !dailyMenuId || busy) return false
+    setBusy(true)
+    setError('')
+    try {
+      const persistedComponents = await Promise.all(components.map(async (component) => {
+        let catalogComponentId = component.catalogComponentId ?? undefined
+        if (component.catalogDraft?.saveToCatalog) {
+          const catalogComponent = await createComponentCatalog({ name: component.catalogDraft.name, defaultExtraPortionPrice: component.catalogDraft.defaultExtraPortionPrice })
+          catalogComponentId = catalogComponent.id
+          setComponentCatalog((current) => [...current, catalogComponent])
+        }
+        const { catalogDraft, ...snapshot } = component
+        return { ...snapshot, catalogComponentId }
+      }))
+      const nextItems = dailyItems.map((item) => item.id === componentsMenu.id ? { ...item, components: persistedComponents } : item)
+      const payload = nextItems.map(({ menuItemId, availableQuantity, individualPrice, components: itemComponents }) => ({ menuItemId, availableQuantity, individualPrice, components: itemComponents }))
+      await saveDailyMenu(dailyDate, payload)
+      const refreshed = await getDailyMenu(dailyDate)
+      setDailyItems(refreshed.items)
+      setDailyUpdatedAt(refreshed.updatedAt)
+      setSavedDailySignature(dailyMenuSignature(refreshed.items))
+      setOriginalMenu(refreshed.items.map((item) => ({ ...item })))
+      setMessage('Componentes guardados correctamente.')
+      return true
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'No se pudieron guardar los componentes')
+      return false
+    } finally { setBusy(false) }
+  }
 
   const dailyMenuDirty = dailyMenuSignature(dailyItems) !== savedDailySignature
   const requestDailyMenuSave = () => {
@@ -267,6 +328,19 @@ export function MenuManagementView() {
     }, extra.id ? 'Extra actualizado.' : 'Extra creado.')
   }
 
+  const handleSaveCatalog = async (input: { name: string; defaultExtraPortionPrice: number }) => {
+    await runAction(async () => {
+      const saved = editingCatalogComponent ? await updateComponentCatalog(editingCatalogComponent.id, input) : await createComponentCatalog(input)
+      setComponentCatalog((current) => editingCatalogComponent ? current.map((item) => item.id === saved.id ? saved : item) : [...current, saved])
+      setCatalogDialogOpen(false)
+    }, editingCatalogComponent ? 'Complemento actualizado.' : 'Complemento creado.')
+  }
+
+  const toggleCatalogComponent = (component: ComponentCatalog) => runAction(async () => {
+    const saved = await updateComponentCatalog(component.id, { active: !component.active })
+    setComponentCatalog((current) => current.map((item) => item.id === saved.id ? saved : item))
+  }, component.active ? 'Complemento desactivado.' : 'Complemento activado.')
+
   const handleDeleteExtra = async () => {
     if (!extraToDelete) return
     const extra = extraToDelete
@@ -279,10 +353,15 @@ export function MenuManagementView() {
   }, extra.active ? 'Extra desactivado.' : 'Extra activado.')
 
   const renderQuantityControls = (menu: MenuViewItem) => { const editable = menuMode !== 'view'; const invalidQuantity = menu.availableQuantity <= 0; return <Stack direction="row" alignItems="center" spacing={0.25} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}><IconButton aria-label={`Disminuir disponibilidad de ${menu.name}`} onClick={() => changeAvailableQuantity(menu, -1)} size="large" disabled={!editable || menu.availableQuantity === 0 || busy}><RemoveRounded /></IconButton><TextField aria-label={`Cantidad disponible de ${menu.name}`} value={quantityDrafts[menu.id] ?? String(menu.availableQuantity)} onChange={(event) => changeQuantityFromInput(menu, event.target.value)} onBlur={() => finishQuantityInput(menu)} onFocus={(event) => event.stopPropagation()} disabled={!editable || busy} error={editable && invalidQuantity} variant="outlined" size="small" inputMode="numeric" inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} sx={{ width: 64, '& .MuiOutlinedInput-root': { height: 36, borderRadius: 1.5 }, '& input': { p: 0.5, textAlign: 'center', fontWeight: 800 }, '& input[type=number]': { MozAppearance: 'textfield' }, '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none', margin: 0 } }} /><IconButton aria-label={`Aumentar disponibilidad de ${menu.name}`} onClick={() => changeAvailableQuantity(menu, 1)} size="large" disabled={!editable || busy}><AddRounded /></IconButton></Stack> }
-  const renderDayAction = (menu: MenuViewItem) => menu.availableToday ? <Chip icon={<CheckCircleRounded />} label="En menú del día" variant="outlined" color="primary" /> : <Button variant="outlined" startIcon={<AddRounded />} onClick={() => addToToday(menu)} disabled={menuMode === 'view' || !menu.active || busy} sx={{ minHeight: 44 }}>{menu.active ? 'Agregar al menú del día' : 'Menú inactivo'}</Button>
+  const renderIndividualPrice = (menu: MenuViewItem) => {
+    const editing = menuMode !== 'view' && editingIndividualPriceId === menu.id
+    if (!editing) return <Typography component={menuMode === 'view' ? 'div' : 'button'} type={menuMode === 'view' ? undefined : 'button'} variant="body2" color="text.secondary" onClick={menuMode === 'view' ? undefined : (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setEditingIndividualPriceId(menu.id) }} sx={{ display: 'block', width: '100%', p: 0, border: 0, bgcolor: 'transparent', textAlign: 'left', font: 'inherit', fontWeight: 600, cursor: menuMode === 'view' ? 'default' : 'text' }}>Principal individual <Box component="span" sx={{ float: 'right', color: 'text.primary' }}>{menu.individualPrice === null ? 'No configurado' : `Q${menu.individualPrice}`}</Box></Typography>
+    return <TextField autoFocus aria-label={`Principal individual de ${menu.name}`} type="number" size="small" placeholder="No configurado" value={menu.individualPrice ?? ''} onChange={(event) => changeIndividualPrice(menu, event.target.value)} onBlur={() => setEditingIndividualPriceId(null)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Enter') { event.preventDefault(); setEditingIndividualPriceId(null) } }} disabled={busy} inputProps={{ min: 0.01, step: 0.01, inputMode: 'decimal' }} InputProps={{ startAdornment: <InputAdornment position="start">Q</InputAdornment> }} sx={{ width: 132, '& .MuiOutlinedInput-root': { height: 30, borderRadius: 1.5 }, '& input': { py: 0.25, px: 0.25 }, '& input[type=number]': { MozAppearance: 'textfield' }, '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none', margin: 0 } }} />
+  }
+  const renderDayAction = (menu: MenuViewItem) => { const dailyItem = dailyItems.find((item) => item.menuItemId === menu.id); return menu.availableToday ? <Stack direction="row" alignItems="center" gap={0.75}><Chip icon={<CheckCircleRounded />} label="En menú del día" variant="outlined" color="primary" /><Button size="small" onClick={() => dailyItem && setComponentsMenu(dailyItem)} disabled={menuMode === 'view' || busy}>Componentes</Button></Stack> : <Button variant="outlined" startIcon={<AddRounded />} onClick={() => addToToday(menu)} disabled={menuMode === 'view' || !menu.active || busy} sx={{ minHeight: 44 }}>{menu.active ? 'Agregar al menú del día' : 'Menú inactivo'}</Button> }
 
-  const renderDayCard = (menu: MenuViewItem) => { const invalidQuantity = menu.availableQuantity <= 0; const editable = menuMode !== 'view'; return <Grid item xs={12} sm={6} lg={4} key={menu.id}><Card elevation={0} role="button" tabIndex={0} onClick={editable ? () => removeFromToday(menu) : undefined} onKeyDown={editable ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); removeFromToday(menu) } } : undefined} aria-label={editable ? `Quitar ${menu.name} del menú del día` : `Menú del día: ${menu.name}`} sx={{ height: '100%', border: '1px solid', borderColor: invalidQuantity && editable ? 'warning.light' : '#D9DCF3', bgcolor: 'background.paper', cursor: editable ? 'pointer' : 'default', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.light' } }}><Box sx={{ p: 1.75 }}><Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}><Box><Typography variant="h6" sx={{ fontWeight: 800, color: editable ? 'text.primary' : 'text.secondary' }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{menu.description}</Typography><Typography sx={{ color: 'primary.main', fontWeight: 800, mt: 0.75 }}>Q{menu.price}</Typography></Box><CheckCircleRounded color="success" sx={{ width: 20, height: 20, p: 0, borderRadius: '50%', opacity: editable ? 1 : 0.9 }} /></Stack></Box><Stack sx={{ px: 1.75, pb: 1.25 }}><Typography variant="body2" color="text.secondary">Disponibles: {menu.availableQuantity} · Quedan: {menu.remainingQuantity}</Typography>{invalidQuantity && editable && <Typography sx={{ mt: 0.25, color: 'warning.dark', fontSize: 13, fontWeight: 500 }}>Define al menos 1 unidad</Typography>}{renderQuantityControls(menu)}</Stack></Card></Grid> }
-  const renderDayRow = (menu: MenuViewItem) => { const invalidQuantity = menu.availableQuantity <= 0; const editable = menuMode !== 'view'; return <Paper key={menu.id} role="button" tabIndex={0} onClick={editable ? () => removeFromToday(menu) : undefined} onKeyDown={editable ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); removeFromToday(menu) } } : undefined} aria-label={editable ? `Quitar ${menu.name} del menú del día` : `Menú del día: ${menu.name}`} elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: invalidQuantity && editable ? 'warning.light' : '#D9DCF3', bgcolor: 'background.paper', cursor: editable ? 'pointer' : 'default', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.light' } }}><Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}><Box sx={{ flex: 1 }}><Typography sx={{ fontWeight: 800, color: editable ? 'text.primary' : 'text.secondary' }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary">{menu.description}</Typography></Box><Typography sx={{ color: 'primary.main', fontWeight: 800 }}>Q{menu.price}</Typography><Stack direction="row" alignItems="center" justifyContent="space-between"><Stack><Typography variant="body2" color="text.secondary">Disponibles: {menu.availableQuantity} · Quedan: {menu.remainingQuantity}</Typography>{invalidQuantity && editable && <Typography sx={{ mt: 0.25, color: 'warning.dark', fontSize: 13, fontWeight: 500 }}>Define al menos 1 unidad</Typography>}{renderQuantityControls(menu)}</Stack></Stack></Stack></Paper> }
+  const renderDayCard = (menu: MenuViewItem) => { const invalidQuantity = menu.availableQuantity <= 0; const editable = menuMode !== 'view'; const dailyItem = dailyItems.find((item) => item.menuItemId === menu.id); const components = dailyItem?.components ?? []; return <Grid item xs={12} sm={6} lg={4} key={menu.id}><Card elevation={0} role="button" tabIndex={0} onClick={editable ? () => removeFromToday(menu) : undefined} onKeyDown={editable ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); removeFromToday(menu) } } : undefined} aria-label={editable ? `Quitar ${menu.name} del menú del día` : `Menú del día: ${menu.name}`} sx={{ height: '100%', border: '1px solid', borderColor: invalidQuantity && editable ? 'warning.light' : '#D9DCF3', bgcolor: 'background.paper', cursor: editable ? 'pointer' : 'default', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.light' } }}><Box sx={{ p: 1.75 }}><Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={1}><Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="h6" sx={{ fontWeight: 800, color: editable ? 'text.primary' : 'text.secondary' }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{menu.description}</Typography><Stack spacing={0.25} sx={{ mt: 1 }}><Typography sx={{ color: 'primary.main', fontWeight: 800 }}>Plato completo <Box component="span" sx={{ float: 'right' }}>Q{menu.price}</Box></Typography>{renderIndividualPrice(menu)}</Stack></Box><CheckCircleRounded color="success" sx={{ width: 20, height: 20, p: 0, borderRadius: '50%', opacity: editable ? 1 : 0.9, flexShrink: 0 }} /></Stack></Box><Stack sx={{ px: 1.75, pb: 1.25 }}><Box sx={{ mt: 0.25 }}><Typography variant="body2" color="text.secondary" sx={{ fontWeight: 700 }}>Incluye</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, overflowWrap: 'anywhere' }}>{components.length > 0 ? components.map((component) => component.name).join(' · ') : 'Sin componentes configurados'}</Typography></Box><Stack direction="row" justifyContent="space-between" sx={{ mt: 1.25 }}><Typography variant="body2" color="text.secondary">Disponibles {menu.availableQuantity}</Typography><Typography variant="body2" color="text.secondary">Quedan {menu.remainingQuantity}</Typography></Stack>{invalidQuantity && editable && <Typography sx={{ mt: 0.25, color: 'warning.dark', fontSize: 13, fontWeight: 500 }}>Define al menos 1 unidad</Typography>}<Stack alignItems="center" sx={{ mt: 0.25 }}>{renderQuantityControls(menu)}</Stack><Button size="small" disabled={!editable} onClick={(event) => { event.stopPropagation(); if (dailyItem) setComponentsMenu(dailyItem) }} sx={{ alignSelf: 'flex-start', mt: 0.5 }}>{editable ? 'Editar componentes' : 'Componentes'}</Button></Stack></Card></Grid> }
+  const renderDayRow = (menu: MenuViewItem) => { const invalidQuantity = menu.availableQuantity <= 0; const editable = menuMode !== 'view'; return <Paper key={menu.id} role="button" tabIndex={0} onClick={editable ? () => removeFromToday(menu) : undefined} onKeyDown={editable ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); removeFromToday(menu) } } : undefined} aria-label={editable ? `Quitar ${menu.name} del menú del día` : `Menú del día: ${menu.name}`} elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: invalidQuantity && editable ? 'warning.light' : '#D9DCF3', bgcolor: 'background.paper', cursor: editable ? 'pointer' : 'default', '&:focus-visible': { outline: '3px solid', outlineColor: 'primary.light' } }}><Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5}><Box sx={{ flex: 1 }}><Typography sx={{ fontWeight: 800, color: editable ? 'text.primary' : 'text.secondary' }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary">{menu.description}</Typography></Box><Stack><Typography sx={{ color: 'primary.main', fontWeight: 800 }}>Plato completo · Q{menu.price}</Typography>{renderIndividualPrice(menu)}</Stack><Stack direction="row" alignItems="center" justifyContent="space-between"><Stack><Typography variant="body2" color="text.secondary">Disponibles: {menu.availableQuantity} · Quedan: {menu.remainingQuantity}</Typography>{invalidQuantity && editable && <Typography sx={{ mt: 0.25, color: 'warning.dark', fontSize: 13, fontWeight: 500 }}>Define al menos 1 unidad</Typography>}{renderQuantityControls(menu)}</Stack></Stack></Stack></Paper> }
 
   const renderCatalogCard = (menu: MenuViewItem) => <Grid item xs={12} sm={6} lg={4} key={menu.id}><Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={2} sx={{ height: '100%' }}><Box sx={{ flex: 1 }}><Stack direction="row" justifyContent="space-between" gap={1}><Typography variant="h6" sx={{ fontWeight: 800 }}>{menu.name}</Typography>{menu.availableToday && <CheckCircleRounded color="primary" fontSize="small" />}</Stack><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{menu.description}</Typography><Typography sx={{ color: 'primary.main', fontWeight: 800, mt: 1 }}>Q{menu.price}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{menu.availableToday ? `Disponible hoy · ${menu.availableQuantity} platos` : 'No disponible hoy'}</Typography></Box>{renderDayAction(menu)}<Stack direction="row" spacing={1}><Button fullWidth variant="outlined" startIcon={<EditRounded />} onClick={() => { setEditingMenu(menu); setDialogOpen(true) }} disabled={busy} sx={{ minHeight: 44 }}>Editar</Button><Button fullWidth variant="outlined" color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setMenuToDelete(menu)} disabled={busy} sx={{ minHeight: 44 }}>Eliminar</Button></Stack></Stack></Card></Grid>
   const renderCatalogRow = (menu: MenuViewItem) => <Paper key={menu.id} elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}><Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'stretch', md: 'center' }} gap={1.5}><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontWeight: 800 }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary" noWrap>{menu.description}</Typography></Box><Typography sx={{ color: 'primary.main', fontWeight: 800, minWidth: 55 }}>Q{menu.price}</Typography>{renderDayAction(menu)}<Typography variant="body2" sx={{ minWidth: 100, fontWeight: 700 }}>{menu.availableToday ? `${menu.availableQuantity} platos` : 'No disponible'}</Typography><Stack direction="row" spacing={0.75}><Button variant="outlined" startIcon={<EditRounded />} onClick={() => { setEditingMenu(menu); setDialogOpen(true) }} disabled={busy} sx={{ minHeight: 42 }}>Editar</Button><IconButton aria-label={`Eliminar ${menu.name}`} color="error" onClick={() => setMenuToDelete(menu)} disabled={busy} sx={{ border: '1px solid', borderColor: 'error.main', borderRadius: 2, width: 42, height: 42 }}><DeleteOutlineRounded /></IconButton></Stack></Stack></Paper>
@@ -307,7 +386,10 @@ export function MenuManagementView() {
     {filteredExtras.length > 0 && <Stack direction="row" justifyContent="flex-end" sx={{ mt: 3 }}><Pagination count={extrasPageCount} page={extrasPage} onChange={(_, nextPage) => setExtrasPage(nextPage)} siblingCount={0} boundaryCount={1} color="primary" shape="rounded" /></Stack>}
     <Snackbar open={Boolean(message)} autoHideDuration={4000} onClose={() => setMessage('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} sx={{ maxWidth: 'calc(100vw - 32px)' }}><Alert severity="success" onClose={() => setMessage('')} sx={{ width: '100%' }}>{message}</Alert></Snackbar>
     <MenuDialog open={dialogOpen} menu={editingMenu} onClose={() => setDialogOpen(false)} onSave={handleSave} />
+    <ComponentCatalogSection components={componentCatalog} busy={busy} onCreate={() => { setEditingCatalogComponent(null); setCatalogDialogOpen(true) }} onEdit={(component) => { setEditingCatalogComponent(component); setCatalogDialogOpen(true) }} onToggle={(component) => void toggleCatalogComponent(component)} />
     <ExtraDialog open={extraDialogOpen} extra={editingExtra} onClose={() => setExtraDialogOpen(false)} onSave={handleSaveExtra} />
+    <DailyMenuComponentsDialog open={Boolean(componentsMenu)} menuName={componentsMenu?.name ?? ''} components={componentsMenu?.components ?? []} catalog={componentCatalog} onClose={() => setComponentsMenu(null)} onSave={saveComponentsForMenu} />
+    <ComponentCatalogDialog open={catalogDialogOpen} component={editingCatalogComponent} onClose={() => setCatalogDialogOpen(false)} onSave={(input) => void handleSaveCatalog(input)} />
     <Dialog open={replaceDialogOpen} onClose={() => setReplaceDialogOpen(false)} fullWidth maxWidth="xs"><DialogTitle sx={{ fontWeight: 800 }}>Reemplazar menú del día</DialogTitle><DialogContent><Typography color="text.secondary">Ya existe un menú guardado para hoy. Al continuar se reemplazarán las opciones y cantidades actuales.</Typography></DialogContent><DialogActions sx={{ p: 2.5, pt: 1, gap: 1 }}><Button onClick={() => setReplaceDialogOpen(false)} variant="outlined">Cancelar</Button><Button onClick={() => { setReplaceDialogOpen(false); void saveCurrentDailyMenu(true) }} variant="contained">Reemplazar menú</Button></DialogActions></Dialog>
     <Dialog open={newDailyMenuDialogOpen} onClose={() => setNewDailyMenuDialogOpen(false)} fullWidth maxWidth="xs"><DialogTitle sx={{ fontWeight: 800 }}>Crear nuevo menú</DialogTitle><DialogContent><Typography color="text.secondary" sx={{ mb: 2 }}>Selecciona la fecha del nuevo menú. Si ya existe uno para esa fecha, se solicitará confirmación para reemplazarlo.</Typography><TextField fullWidth type="date" label="Fecha" value={newDailyMenuDate} onChange={(event) => setNewDailyMenuDate(event.target.value)} InputLabelProps={{ shrink: true }} /></DialogContent><DialogActions sx={{ p: 2.5, pt: 1, gap: 1 }}><Button onClick={() => setNewDailyMenuDialogOpen(false)} variant="outlined">Cancelar</Button><Button onClick={() => void startNewDailyMenu()} variant="contained" disabled={!newDailyMenuDate || busy}>Continuar</Button></DialogActions></Dialog>
     <Dialog open={resetDailyMenuDialogOpen} onClose={() => setResetDailyMenuDialogOpen(false)} fullWidth maxWidth="sm"><DialogTitle sx={{ fontWeight: 800 }}>Crear nuevo menú</DialogTitle><DialogContent><Typography color="text.secondary">Se eliminará permanentemente el menú del día actualmente registrado, incluyendo todos sus datos asociados. Luego se creará un nuevo menú con todos los valores reiniciados a 0.</Typography><Typography color="error.main" sx={{ mt: 2, fontWeight: 700 }}>Esta acción no se puede deshacer ni recuperar.</Typography></DialogContent><DialogActions sx={{ p: 2.5, pt: 1, gap: 1 }}><Button onClick={() => setResetDailyMenuDialogOpen(false)} variant="outlined">Cancelar</Button><Button onClick={() => void confirmResetDailyMenu()} variant="contained" color="error" disabled={busy}>Eliminar y crear nuevo menú</Button></DialogActions></Dialog>

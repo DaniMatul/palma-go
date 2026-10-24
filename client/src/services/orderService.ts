@@ -9,8 +9,13 @@ type ApiOrderItem = {
   unitPrice: number | string
   subtotal: number | string
   menuItemId?: string | null
+  menuMode?: 'FULL' | 'INDIVIDUAL'
+  menuComponentsSnapshot?: string | null
   extraId?: string | null
   orderAccountId?: string | null
+  dailyMenuItem?: { components: Array<{ name: string }> } | null
+  comment?: string | null
+  customizations?: Array<{ id: string; dailyMenuComponentId?: string | null; componentName: string; action: 'REMOVE' | 'ADD'; quantity: number; unitPrice: number | string }>
 }
 
 type ApiOrderAccount = {
@@ -37,7 +42,7 @@ type ApiOrder = {
 }
 
 export type CreateOrderItemInput =
-  | { type: 'MENU'; menuItemId: string; quantity: number }
+  | { type: 'MENU'; menuItemId: string; quantity: number; menuMode?: 'FULL' | 'INDIVIDUAL'; comment?: string; customizations?: Array<{ componentId: string; action: 'REMOVE' | 'ADD'; quantity: number }> }
   | { type: 'EXTRA'; extraId: string; quantity: number }
   | { type: 'CUSTOM'; description: string; unitPrice: number; quantity: number }
 
@@ -60,12 +65,28 @@ function normalizeStatus(status: ApiOrder['status']): OrderStatus {
 }
 
 function normalizeOrder(order: ApiOrder): Order {
+  const parseMenuComponents = (item: ApiOrderItem) => {
+    if (item.menuComponentsSnapshot) {
+      try {
+        const snapshot = JSON.parse(item.menuComponentsSnapshot)
+        if (Array.isArray(snapshot)) return snapshot.filter((component): component is { name: string } => Boolean(component && typeof component.name === 'string'))
+      } catch {
+        // Fall back to the relation for orders created before the snapshot was added.
+      }
+    }
+    return item.dailyMenuItem?.components.map((component) => ({ name: component.name }))
+  }
   const normalizeItem = (item: ApiOrderItem) => ({
     id: item.id,
     name: item.description,
     quantity: item.quantity,
     price: Number(item.unitPrice),
+    menuItemId: item.menuItemId ?? undefined,
+    menuMode: item.menuMode ?? 'FULL',
+    menuComponents: parseMenuComponents(item),
     subtotal: Number(item.subtotal),
+    comment: item.comment ?? undefined,
+    customizations: item.customizations?.map((customization) => ({ ...customization, unitPrice: Number(customization.unitPrice) })),
   })
   const items = order.items.map(normalizeItem)
   const accounts = order.accounts?.map((account) => ({

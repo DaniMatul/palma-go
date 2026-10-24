@@ -36,10 +36,36 @@ export type DailyMenuItem = {
   name: string
   description: string
   price: number
+  individualPrice: number | null
   availableQuantity: number
   remainingQuantity: number
   soldQuantity?: number
   revenue?: number
+  components: DailyMenuComponent[]
+}
+
+export type DailyMenuComponent = {
+  id?: string
+  catalogComponentId?: string | null
+  name: string
+  position?: number
+  active?: boolean
+  removable: boolean
+  allowsExtraPortion: boolean
+  extraPortionPrice: number
+}
+
+export type DailyMenuComponentDraft = DailyMenuComponent & {
+  catalogDraft?: { name: string; defaultExtraPortionPrice: number; saveToCatalog: boolean }
+}
+
+export type ComponentCatalog = {
+  id: string
+  name: string
+  defaultExtraPortionPrice: number
+  active: boolean
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type DailyMenu = {
@@ -56,6 +82,11 @@ export type OrderLine = {
   name: string
   price: number
   quantity: number
+  menuComponents?: Array<{ name: string }>
+  menuItemId?: string
+  menuMode?: 'FULL' | 'INDIVIDUAL'
+  customizations?: Array<{ componentId?: string; componentName: string; action: 'REMOVE' | 'ADD'; quantity: number; unitPrice: number }>
+  comment?: string
 }
 
 export type ExtraProduct = {
