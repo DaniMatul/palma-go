@@ -19,6 +19,8 @@ export type MenuItem = {
 
 export type MenuItemInput = Pick<MenuItem, 'name' | 'description' | 'price'>
 
+export type MenuCategory = 'Desayuno' | 'Refacción' | 'Almuerzo' | 'Extra'
+
 export type Extra = {
   id: string
   name: string

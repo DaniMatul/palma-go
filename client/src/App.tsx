@@ -8,11 +8,13 @@ import { HistoryView } from './components/HistoryView'
 import { OrdersList } from './components/OrdersList'
 import { Sidebar, SidebarSection } from './components/Sidebar'
 import { MenuSidebar } from './components/MenuSidebar'
+import type { MenuSection } from './components/MenuSidebar'
 import { Order, OrderStatus } from './types/order'
 import { getOrders, updateOrderStatus } from './services/orderService'
 
 function App() {
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-order')
+  const [menuSection, setMenuSection] = useState<MenuSection>('Menús')
   const [orders, setOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState('')
@@ -84,9 +86,9 @@ function App() {
   return (
     <Box sx={{ height: { xs: 'auto', md: '100dvh' }, minHeight: { xs: '100vh', md: 0 }, overflow: { xs: 'visible', md: 'hidden' }, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, bgcolor: 'background.default' }}>
       <Sidebar activeSection={activeSection} onNavigate={handleNavigate} compact={activeSection === 'menu'} />
-      {activeSection === 'menu' && <MenuSidebar />}
+      {activeSection === 'menu' && <MenuSidebar selectedSection={menuSection} onSectionChange={setMenuSection} />}
       <Box component="main" sx={{ flex: 1, minWidth: 0, height: { xs: 'auto', md: '100dvh' }, overflowY: { xs: 'visible', md: 'auto' }, overflowX: 'hidden', p: { xs: 2, sm: 3, lg: 4 } }}>
-        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? <MenuManagementView /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
+        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? <MenuManagementView section={menuSection} /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
           {ordersError && <Alert severity="error" onClose={() => setOrdersError('')} sx={{ mb: 2 }}>{ordersError}</Alert>}
           <Grid container spacing={{ xs: 3, lg: 4 }}>
           <Grid item xs={12} lg={8}>
