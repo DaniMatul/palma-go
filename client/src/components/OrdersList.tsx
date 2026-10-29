@@ -68,7 +68,7 @@ export function OrdersList({ orders, filter, selectedId, onFilterChange, onSelec
     <Box component="section" aria-labelledby="orders-title">
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-end' }} gap={2}>
         <Box>
-          <Typography id="orders-title" variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.8rem', md: '2.25rem' } }}>Pedidos</Typography>
+          <Typography id="orders-title" variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '2rem', md: '2.25rem' } }}>Pedidos</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>Revisa y actualiza los pedidos del comedor.</Typography>
         </Box>
         <ToggleButtonGroup value={viewMode} exclusive onChange={(_, value: ViewMode | null) => value && setViewMode(value)} aria-label="Vista de pedidos" size="large" sx={{ alignSelf: { xs: 'flex-start', sm: 'auto' }, bgcolor: 'background.paper' }}>

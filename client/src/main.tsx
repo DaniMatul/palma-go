@@ -58,16 +58,39 @@ const theme = createTheme({
     warning: { main: '#A56C18', light: '#FFF2D9' },
     error: { main: '#A85A62', light: '#FBE5E7' },
   },
-  typography: { fontFamily: 'Inter, Roboto, Arial, sans-serif' },
+  typography: {
+    fontFamily: 'Inter, Roboto, Arial, sans-serif',
+    htmlFontSize: 16,
+    fontSize: 16,
+    body1: { fontSize: '1.125rem', lineHeight: 1.55 },
+    body2: { fontSize: '1rem', lineHeight: 1.5 },
+    caption: { fontSize: '1rem', lineHeight: 1.4 },
+    button: { fontSize: '1.125rem', lineHeight: 1.45, fontWeight: 600 },
+    h1: { fontSize: '2.25rem', lineHeight: 1.2 },
+    h2: { fontSize: '2.125rem', lineHeight: 1.2 },
+    h3: { fontSize: '2rem', lineHeight: 1.25 },
+    h4: { fontSize: '2.25rem', lineHeight: 1.2 },
+    h5: { fontSize: '1.625rem', lineHeight: 1.25 },
+    h6: { fontSize: '1.5rem', lineHeight: 1.3 },
+  },
   shape: { borderRadius: 16 },
   components: {
-    MuiButton: { styleOverrides: { root: { textTransform: 'none', borderRadius: 12, minHeight: 44, boxShadow: 'none' } } },
+    MuiButton: { styleOverrides: { root: { textTransform: 'none', borderRadius: 12, minHeight: 48, boxShadow: 'none', fontSize: '1.125rem', lineHeight: 1.45 }, sizeSmall: { minHeight: 44, paddingTop: 9, paddingBottom: 9 }, sizeLarge: { minHeight: 52 } } },
+    MuiInputBase: { styleOverrides: { root: { fontSize: '1.125rem', lineHeight: 1.45, minHeight: 52 }, input: { fontSize: '1.125rem', lineHeight: 1.45 } } },
+    MuiInputLabel: { styleOverrides: { root: { fontSize: '1.125rem', lineHeight: 1.4 } } },
+    MuiFormHelperText: { styleOverrides: { root: { fontSize: '1rem', lineHeight: 1.4 } } },
+    MuiMenuItem: { styleOverrides: { root: { fontSize: '1.125rem', lineHeight: 1.45, minHeight: 48 } } },
+    MuiFormControlLabel: { styleOverrides: { label: { fontSize: '1.125rem' } } },
+    MuiTableCell: { styleOverrides: { root: { fontSize: '1.125rem', lineHeight: 1.45 } } },
+    MuiTab: { styleOverrides: { root: { textTransform: 'none', fontWeight: 700, fontSize: '1.125rem', minHeight: 48 } } },
+    MuiPaginationItem: { styleOverrides: { root: { fontSize: '1.125rem', minWidth: 40, height: 40 } } },
     MuiCard: { styleOverrides: { root: { borderRadius: 16, boxShadow: 'none' } } },
     MuiPaper: { styleOverrides: { root: { borderRadius: 20 } } },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
           borderRadius: 14,
+          '&.MuiInputBase-sizeSmall': { minHeight: 44 },
           '& .MuiOutlinedInput-notchedOutline': { borderColor: '#D9DCE8' },
           '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#D9DCE8' },
           '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#787FC3' },
@@ -77,7 +100,6 @@ const theme = createTheme({
     MuiIconButton: { styleOverrides: { root: { borderRadius: 12 } } },
     MuiChip: { styleOverrides: { root: { borderRadius: 999 } } },
     MuiDialog: { styleOverrides: { paper: { borderRadius: 24 } } },
-    MuiTab: { styleOverrides: { root: { textTransform: 'none', fontWeight: 700 } } },
     MuiAlert: {
       styleOverrides: {
         root: ({ ownerState }) => {

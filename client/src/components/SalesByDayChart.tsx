@@ -52,7 +52,7 @@ export function SalesByDayChart({ data, total, period, onPeriodChange }: SalesBy
           {points.map((point) => (
             <g key={point.label}>
               <circle cx={point.x} cy={point.y} r="5" fill={theme.palette.background.paper} stroke={theme.palette.primary.main} strokeWidth="3" />
-              {(period === 'week' || [1, 5, 10, 15, 20, 25, 30].includes(Number(point.label))) && <text x={point.x} y={height - 12} textAnchor="middle" fill={theme.palette.text.secondary} fontSize="13">{point.label}</text>}
+              {(period === 'week' || [1, 5, 10, 15, 20, 25, 30].includes(Number(point.label))) && <text x={point.x} y={height - 12} textAnchor="middle" fill={theme.palette.text.secondary} fontSize="16">{point.label}</text>}
             </g>
           ))}
         </svg>

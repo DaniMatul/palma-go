@@ -12,7 +12,7 @@ export function OrderCard({ order, selected, onSelect, now }: OrderCardProps) {
       <CardActionArea onClick={onSelect} sx={{ p: { xs: 2, md: 2.5 } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
           <Box>
-            <Typography variant="h6" sx={{ fontSize: { xs: '1.05rem', md: '1.2rem' }, fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
+            <Typography variant="h6" sx={{ fontSize: { xs: '1.5rem', md: '1.625rem' }, fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{order.customerName}</Typography>
             <Stack direction="row" alignItems="center" flexWrap="wrap" gap={0.75}><Typography variant="body2" color="text.secondary">{order.createdAt} · Promesa {order.promiseTime}</Typography>{order.status === 'in-progress' && <OrderPromiseTimer promiseTime={order.promiseTime} now={now} />}</Stack>
             <Typography variant="body2" color="text.secondary">{totalItems} {totalItems === 1 ? 'producto' : 'productos'}</Typography>
