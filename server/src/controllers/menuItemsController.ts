@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { Prisma } from '@prisma/client'
+import type { MenuCategory } from '@prisma/client'
 import {
   createMenuItem,
   deactivateMenuItem,
@@ -12,6 +13,7 @@ type MenuItemBody = {
   name?: unknown
   description?: unknown
   price?: unknown
+  category?: unknown
   active?: unknown
 }
 
@@ -29,6 +31,12 @@ function validationError(message: string) {
   return { error: message }
 }
 
+const validCategories = new Set(['BREAKFAST', 'SNACK', 'LUNCH', 'DINNER'])
+
+function parseCategory(value: unknown): MenuCategory | null {
+  return typeof value === 'string' && validCategories.has(value) ? value as MenuCategory : null
+}
+
 export async function getMenuItems(_request: Request, response: Response) {
   try {
     response.status(200).json(await listMenuItems())
@@ -43,11 +51,13 @@ export async function postMenuItem(request: Request, response: Response) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     const description = typeof body.description === 'string' ? body.description.trim() : ''
     const price = parsePrice(body.price)
+    const category = parseCategory(body.category)
 
     if (!name) return response.status(400).json(validationError('El nombre es obligatorio'))
     if (price === null) return response.status(400).json(validationError('El precio es obligatorio y debe ser mayor que 0'))
+    if (!category) return response.status(400).json(validationError('La categoría es obligatoria y debe ser BREAKFAST, SNACK, LUNCH o DINNER'))
 
-    const menuItem = await createMenuItem({ name, description, price })
+    const menuItem = await createMenuItem({ name, description, price, category })
     return response.status(201).json(menuItem)
   } catch {
     return response.status(500).json({ error: 'No se pudo crear el menú' })
@@ -59,7 +69,7 @@ export async function putMenuItem(request: Request, response: Response) {
     const id = request.params.id
     if (typeof id !== 'string' || !id) return response.status(400).json(validationError('El id del menú es obligatorio'))
     const body = getBody(request)
-    const data: { name?: string; description?: string; price?: number; active?: boolean } = {}
+    const data: { name?: string; description?: string; price?: number; category?: MenuCategory; active?: boolean } = {}
 
     if (body.name !== undefined) {
       if (typeof body.name !== 'string' || !body.name.trim()) return response.status(400).json(validationError('El nombre no puede estar vacío'))
@@ -73,6 +83,11 @@ export async function putMenuItem(request: Request, response: Response) {
       const price = parsePrice(body.price)
       if (price === null) return response.status(400).json(validationError('El precio debe ser mayor que 0'))
       data.price = price
+    }
+    if (body.category !== undefined) {
+      const category = parseCategory(body.category)
+      if (!category) return response.status(400).json(validationError('La categoría debe ser BREAKFAST, SNACK, LUNCH o DINNER'))
+      data.category = category
     }
     if (body.active !== undefined) {
       if (typeof body.active !== 'boolean') return response.status(400).json(validationError('active debe ser booleano'))

@@ -31,7 +31,7 @@ export function PeriodSelector({ options, value, onChange, label }: PeriodSelect
           border: 0,
           borderRight: `1px solid ${theme.palette.divider}`,
           color: theme.palette.text.secondary,
-          fontSize: '1rem',
+          fontSize: '0.8125rem',
           fontWeight: 500,
           whiteSpace: 'nowrap',
           '&:last-of-type': { borderRight: 0 },

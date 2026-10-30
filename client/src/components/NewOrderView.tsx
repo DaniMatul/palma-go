@@ -246,7 +246,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
 
   return (
     <Box component="section" aria-labelledby="new-order-title">
-      <Typography id="new-order-title" variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '2rem', md: '2.25rem' } }}>Nuevo pedido</Typography>
+      <Typography id="new-order-title" variant="h4" sx={{ fontWeight: 800, fontSize: { xs: '1.8125rem', md: '2.0625rem' } }}>Nuevo pedido</Typography>
       <Typography color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>Registra rápidamente un pedido para el comedor.</Typography>
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
       <Grid container spacing={{ xs: 3, lg: 4 }}>

@@ -12,14 +12,17 @@ export type MenuItem = {
   name: string
   description: string
   price: number
+  category: MenuItemCategory | null
   active: boolean
   createdAt?: string
   updatedAt?: string
 }
 
-export type MenuItemInput = Pick<MenuItem, 'name' | 'description' | 'price'>
+export type MenuItemCategory = 'BREAKFAST' | 'SNACK' | 'LUNCH' | 'DINNER'
 
-export type MenuCategory = 'Desayuno' | 'Refacción' | 'Almuerzo' | 'Extra'
+export type MenuItemInput = Pick<MenuItem, 'name' | 'description' | 'price' | 'category'>
+
+export type MenuCategory = 'Desayuno' | 'Refacción' | 'Almuerzo' | 'Cena' | 'Extra'
 
 export type Extra = {
   id: string

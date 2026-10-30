@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import type { MenuCategory } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 
 export class MenuItemNotFoundError extends Error {
@@ -12,6 +13,7 @@ export type CreateMenuItemInput = {
   name: string
   description: string
   price: Prisma.Decimal | number | string
+  category: MenuCategory
 }
 
 export type UpdateMenuItemInput = Partial<CreateMenuItemInput> & {
@@ -28,6 +30,7 @@ export function createMenuItem(input: CreateMenuItemInput) {
       name: input.name,
       description: input.description,
       price: input.price,
+      category: input.category,
       active: true,
     },
   })

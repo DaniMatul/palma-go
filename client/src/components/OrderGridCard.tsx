@@ -12,7 +12,7 @@ export function OrderGridCard({ order, selected, onSelect, now }: OrderGridCardP
       <CardActionArea onClick={onSelect} sx={{ height: '100%', p: 2.25 }}>
         <Stack spacing={1.5} sx={{ height: '100%' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-          <Typography variant="h6" sx={{ fontSize: '1.5rem', fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
+          <Typography variant="h6" sx={{ fontSize: '1.3125rem', fontWeight: 800 }}>Pedido {displayOrderNumber(order)}</Typography>
           </Stack>
           <Typography sx={{ fontWeight: 700 }}>{order.customerName}</Typography>
           <Stack spacing={0.4} sx={{ flex: 1 }}>
