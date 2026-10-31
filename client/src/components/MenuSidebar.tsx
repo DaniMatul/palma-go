@@ -1,6 +1,6 @@
 import { Box, Stack, Typography } from '@mui/material'
 
-const menuSections = ['Menús', 'Desayunos', 'Refacciones', 'Almuerzos', 'Cenas', 'Extras'] as const
+const menuSections = ['Menús', 'Desayunos', 'Refacciones', 'Almuerzos', 'Extras'] as const
 
 export type MenuSection = typeof menuSections[number]
 

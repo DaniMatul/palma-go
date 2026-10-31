@@ -45,6 +45,9 @@ export type DailyMenuItem = {
   remainingQuantity: number
   soldQuantity?: number
   revenue?: number
+  pinned?: boolean
+  sourceDailyMenuId?: string
+  sourceDate?: string
 }
 
 export type DailyMenu = {

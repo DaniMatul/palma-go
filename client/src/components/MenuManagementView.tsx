@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AddRounded, CalendarMonthRounded, ChevronLeftRounded, ChevronRightRounded, CloseRounded, DeleteOutlineRounded, EditRounded, GridView, RemoveRounded, SearchRounded, ViewList } from '@mui/icons-material'
-import { Alert, Box, Button, Card, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Grid, IconButton, InputAdornment, Pagination, Paper, Snackbar, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { AddRounded, CalendarMonthRounded, ChevronLeftRounded, ChevronRightRounded, CloseRounded, DeleteOutlineRounded, EditRounded, GridView, PushPinOutlined, RemoveRounded, SearchRounded, ViewList } from '@mui/icons-material'
+import { Alert, Box, Button, Card, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Drawer, Grid, IconButton, InputAdornment, Pagination, Paper, Snackbar, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { createExtra, deleteExtra, getExtras, updateExtra } from '../services/extraService'
-import { createDailyMenu, getDailyMenu, getTodayDate, resetDailyMenu, saveDailyMenu } from '../services/dailyMenuService'
+import { createDailyMenu, getDailyMenu, getTodayDate, resetDailyMenu, saveDailyMenu, setDailyMenuPin } from '../services/dailyMenuService'
 import { createMenuItem, deleteMenuItem, getMenuItems, updateMenuItem } from '../services/menuService'
 import { DailyMenuItem, Extra, MenuCategory, MenuItem, MenuItemCategory } from '../types/menu'
 import { ExtraDialog } from './ExtraDialog'
@@ -19,11 +19,12 @@ const dateMenuCategories: Array<{ title: string; category: MenuCategory }> = [
   { title: 'Extras', category: 'Extra' },
 ]
 
-type DishCategory = Exclude<MenuCategory, 'Extra'>
-const menuCategoryLabels: Record<MenuItemCategory, DishCategory> = { BREAKFAST: 'Desayuno', SNACK: 'Refacción', LUNCH: 'Almuerzo', DINNER: 'Cena' }
-const menuCategoryValues: Record<Exclude<MenuCategory, 'Extra'>, MenuItemCategory> = { Desayuno: 'BREAKFAST', Refacción: 'SNACK', Almuerzo: 'LUNCH', Cena: 'DINNER' }
+type CatalogDishCategory = Exclude<MenuCategory, 'Extra'>
+type DishCategory = Exclude<CatalogDishCategory, 'Cena'>
+const menuCategoryLabels: Record<MenuItemCategory, CatalogDishCategory> = { BREAKFAST: 'Desayuno', SNACK: 'Refacción', LUNCH: 'Almuerzo', DINNER: 'Cena' }
+const menuCategoryValues: Record<DishCategory, MenuItemCategory> = { Desayuno: 'BREAKFAST', Refacción: 'SNACK', Almuerzo: 'LUNCH' }
 
-function getMenuCategoryLabel(menu: MenuItem): DishCategory | null {
+function getMenuCategoryLabel(menu: MenuItem): CatalogDishCategory | null {
   return menu.category ? menuCategoryLabels[menu.category] : null
 }
 
@@ -47,6 +48,10 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   const [dailyUpdatedAt, setDailyUpdatedAt] = useState<string | null>(null)
   const [dailyMenuEditorOpen, setDailyMenuEditorOpen] = useState(false)
   const [dailyMenuEditorCategory, setDailyMenuEditorCategory] = useState<DishCategory | null>(null)
+  const [dailyMenuEditorId, setDailyMenuEditorId] = useState<string | null>(null)
+  const [dailyMenuEditorSourceId, setDailyMenuEditorSourceId] = useState<string | null>(null)
+  const [dailyMenuEditorKeepsPinned, setDailyMenuEditorKeepsPinned] = useState(false)
+  const [dailyMenuEditorDate, setDailyMenuEditorDate] = useState(getTodayDate)
   const [dailyMenuEditorSelection, setDailyMenuEditorSelection] = useState<Record<string, number>>({})
   const [dailyMenuEditorQuantityDrafts, setDailyMenuEditorQuantityDrafts] = useState<Record<string, string>>({})
   const [viewMode, setViewMode] = useState<ViewMode>('cards')
@@ -71,7 +76,7 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     setLoading(true)
     setError('')
     try {
-      const [menuItems, extraItems, dailyMenu] = await Promise.all([getMenuItems(), getExtras(), getDailyMenu(selectedMenuDate)])
+      const [menuItems, extraItems, dailyMenu] = await Promise.all([getMenuItems(), getExtras(), getDailyMenu(selectedMenuDate, true)])
       setMenus(menuItems)
       setExtras(extraItems)
       setDailyItems(dailyMenu.items)
@@ -91,13 +96,17 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     setLoading(true)
     setError('')
     try {
-      const dailyMenu = await getDailyMenu(date)
+      const dailyMenu = await getDailyMenu(date, true)
       setDailyItems(dailyMenu.items)
       setDailyDate(dailyMenu.date)
       setDailyMenuId(dailyMenu.id)
       setDailyUpdatedAt(dailyMenu.updatedAt)
       setDailyMenuEditorOpen(false)
       setDailyMenuEditorCategory(null)
+      setDailyMenuEditorId(null)
+      setDailyMenuEditorSourceId(null)
+      setDailyMenuEditorKeepsPinned(false)
+      setDailyMenuEditorDate(dailyMenu.date)
       setDailyMenuEditorSelection({})
       setDailyMenuEditorQuantityDrafts({})
     } catch (requestError) {
@@ -109,6 +118,10 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
 
   const changeSelectedMenuDate = (date: string) => {
     setSelectedMenuDate(date)
+    setDailyItems([])
+    setDailyMenuId(null)
+    setDailyUpdatedAt(null)
+    setDailyDate(date)
     void loadDailyMenuByDate(date)
   }
 
@@ -119,7 +132,7 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   }
 
   const getMenuCategory = (menu: MenuItem) => getMenuCategoryLabel(menu)
-  const sectionCategory: Record<string, MenuCategory> = { Desayunos: 'Desayuno', Refacciones: 'Refacción', Almuerzos: 'Almuerzo', Cenas: 'Cena' }
+  const sectionCategory: Record<string, MenuCategory> = { Desayunos: 'Desayuno', Refacciones: 'Refacción', Almuerzos: 'Almuerzo' }
   const sectionMenus = useMemo(() => section === 'Menús' || section === 'Extras' ? menus : menus.filter((menu) => getMenuCategory(menu) === sectionCategory[section]), [menus, section])
   const filteredMenus = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
@@ -140,9 +153,20 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     const menu = menus.find((candidate) => candidate.id === item.menuItemId)
     return getMenuCategory(menu ?? { id: item.menuItemId, name: item.name, description: '', price: item.price, category: null, active: true }) === category
   })
-  const dateMenuCount = dateMenuCategories.filter((group) => getDailyItemsForCategory(group.category).length > 0).length
+  const getDailyMenuGroupsForCategory = (category: MenuCategory) => {
+    const items = getDailyItemsForCategory(category)
+    const grouped = new Map<string, DailyMenuItem[]>()
+    items.forEach((item) => {
+      const sourceId = item.sourceDailyMenuId ?? dailyMenuId ?? `unpersisted-${category}`
+      grouped.set(sourceId, [...(grouped.get(sourceId) ?? []), item])
+    })
+    return [...grouped.entries()].map(([sourceId, sourceItems]) => ({ sourceId, sourceItems }))
+  }
+  const dateMenuCount = dateMenuCategories.reduce((total, group) => total + getDailyMenuGroupsForCategory(group.category).length, 0)
   const selectedDateLabel = new Date(`${selectedMenuDate}T12:00:00`).toLocaleDateString('es-GT', { day: 'numeric', month: 'long', year: 'numeric' })
-  const isSelectedDateToday = selectedMenuDate === getTodayDate()
+  const todayBusinessDate = getTodayDate()
+  const isSelectedDateToday = selectedMenuDate === todayBusinessDate
+  const isSelectedDatePast = selectedMenuDate < todayBusinessDate
   const pageCount = Math.max(1, Math.ceil(filteredMenus.length / pageSize))
   const paginatedMenus = filteredMenus.slice((page - 1) * pageSize, page * pageSize)
   const extrasPageCount = Math.max(1, Math.ceil(filteredExtras.length / pageSize))
@@ -158,11 +182,17 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     try { await action(); setMessage(success) } catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'No se pudo completar la operación') } finally { setBusy(false) }
   }
 
-  const handleSave = async (menu: { id?: string; name: string; description: string; price: number; category: Exclude<MenuCategory, 'Extra'>; active: boolean }) => {
+  const handleSave = async (menu: { id?: string; name: string; description: string; price: number; category?: DishCategory; active: boolean }) => {
     await runAction(async () => {
       const { category, ...menuInput } = menu
-      const saved = menu.id ? await updateMenuItem(menu.id, { ...menuInput, category: menuCategoryValues[category] }) : await createMenuItem({ ...menuInput, category: menuCategoryValues[category] })
-      setMenus((current) => menu.id ? updateMenu(current, saved.id, saved) : [...current, saved])
+      if (menu.id) {
+        const saved = await updateMenuItem(menu.id, { ...menuInput, ...(category ? { category: menuCategoryValues[category] } : {}) })
+        setMenus((current) => updateMenu(current, saved.id, saved))
+      } else {
+        if (!category) throw new Error('Selecciona una categoría.')
+        const saved = await createMenuItem({ ...menuInput, category: menuCategoryValues[category] })
+        setMenus((current) => [...current, saved])
+      }
       setDialogOpen(false)
     }, menu.id ? 'Plato actualizado.' : 'Plato creado.')
   }
@@ -173,10 +203,21 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     await runAction(async () => { const deleted = await deleteMenuItem(menu.id); setMenus((current) => updateMenu(current, menu.id, deleted)); setDailyItems((current) => current.filter((item) => item.menuItemId !== menu.id)); setMenuToDelete(null) }, 'Plato eliminado.')
   }
 
-  const openDailyMenuEditor = (category: DishCategory) => {
-    const categoryItems = getDailyItemsForCategory(category)
+  const openDailyMenuEditor = (category: DishCategory, sourceId?: string, sourceDate?: string) => {
+    if (selectedMenuDate < getTodayDate()) {
+      setError('Los menús de fechas pasadas solo se pueden consultar.')
+      return
+    }
+    const categoryItems = getDailyItemsForCategory(category).filter((item) => !sourceId || item.sourceDailyMenuId === sourceId)
     const selection = Object.fromEntries(categoryItems.map((item) => [item.menuItemId, item.availableQuantity]))
+    const editingFixedFromFuture = Boolean(sourceDate && sourceDate < selectedMenuDate)
+    const targetId = editingFixedFromFuture ? dailyMenuId : sourceId ?? dailyMenuId
+    const targetDate = editingFixedFromFuture ? selectedMenuDate : sourceDate ?? selectedMenuDate
     setDailyMenuEditorCategory(category)
+    setDailyMenuEditorId(targetId)
+    setDailyMenuEditorSourceId(sourceId ?? targetId)
+    setDailyMenuEditorKeepsPinned(editingFixedFromFuture && categoryItems.some((item) => item.pinned))
+    setDailyMenuEditorDate(targetDate)
     setDailyMenuEditorSelection(selection)
     setDailyMenuEditorQuantityDrafts({})
     setDailyMenuEditorOpen(true)
@@ -185,6 +226,10 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   const closeDailyMenuEditor = () => {
     setDailyMenuEditorOpen(false)
     setDailyMenuEditorCategory(null)
+    setDailyMenuEditorId(null)
+    setDailyMenuEditorSourceId(null)
+    setDailyMenuEditorKeepsPinned(false)
+    setDailyMenuEditorDate(getTodayDate())
     setDailyMenuEditorSelection({})
     setDailyMenuEditorQuantityDrafts({})
   }
@@ -224,7 +269,12 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   }
 
   const saveDailyMenuEditor = () => {
-    if (!dailyMenuEditorCategory || busy) return
+    const editorCategory = dailyMenuEditorCategory
+    if (!editorCategory || busy) return
+    if (dailyMenuEditorDate < getTodayDate()) {
+      setError('No se pueden editar menús para fechas pasadas.')
+      return
+    }
     const selectedItems = Object.entries(dailyMenuEditorSelection).map(([menuItemId, availableQuantity]) => ({ menuItemId, availableQuantity }))
     const invalidItem = selectedItems.find((item) => item.availableQuantity <= 0)
     if (invalidItem) {
@@ -237,12 +287,17 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
       return
     }
     const categoryIds = new Set(editorDishes.map((menu) => menu.id))
-    const unchangedItems = dailyItems.filter((item) => !categoryIds.has(item.menuItemId)).map(({ menuItemId, availableQuantity }) => ({ menuItemId, availableQuantity }))
+    const unchangedItems = dailyItems.filter((item) => item.sourceDailyMenuId === dailyMenuEditorId && !categoryIds.has(item.menuItemId)).map(({ menuItemId, availableQuantity }) => ({ menuItemId, availableQuantity }))
     const payload = [...unchangedItems, ...selectedItems]
     void runAction(async () => {
-      if (dailyMenuId) await saveDailyMenu(dailyDate, payload)
-      else await createDailyMenu(dailyDate, payload)
-      const refreshed = await getDailyMenu(dailyDate)
+      const saved = dailyMenuEditorId
+        ? await saveDailyMenu(dailyMenuEditorDate, payload, dailyMenuEditorId)
+        : await createDailyMenu(dailyMenuEditorDate, payload)
+      if (dailyMenuEditorKeepsPinned && dailyMenuEditorSourceId && saved.id && dailyMenuEditorSourceId !== saved.id) {
+        await setDailyMenuPin(dailyMenuEditorSourceId, menuCategoryValues[editorCategory], false)
+        await setDailyMenuPin(saved.id, menuCategoryValues[editorCategory], true)
+      }
+      const refreshed = await getDailyMenu(selectedMenuDate, true)
       setDailyItems(refreshed.items)
       setSelectedMenuDate(refreshed.date)
       setDailyDate(refreshed.date)
@@ -253,6 +308,10 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   }
 
   const startNewDailyMenu = async () => {
+    if (newDailyMenuDate < getTodayDate()) {
+      setError('No se pueden crear menús para fechas pasadas.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -305,14 +364,30 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
     setExtras((current) => current.map((item) => item.id === saved.id ? saved : item))
   }, extra.active ? 'Extra desactivado.' : 'Extra activado.')
 
+  const toggleDailyMenuPin = (sourceId: string, category: DishCategory, pinned: boolean) => runAction(async () => {
+    await setDailyMenuPin(sourceId, menuCategoryValues[category], pinned)
+    const refreshed = await getDailyMenu(selectedMenuDate, true)
+    setDailyItems(refreshed.items)
+    setDailyDate(refreshed.date)
+    setDailyMenuId(refreshed.id)
+    setDailyUpdatedAt(refreshed.updatedAt)
+  }, pinned ? 'Menú fijado correctamente.' : 'Menú desfijado correctamente.')
+
   const renderCatalogCard = (menu: MenuViewItem) => <Grid item xs={12} sm={6} lg={4} key={menu.id}><Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={2} sx={{ height: '100%' }}><Box sx={{ flex: 1 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{menu.description}</Typography><Typography sx={{ color: 'primary.main', fontWeight: 800, mt: 1 }}>Q{menu.price}</Typography></Box><Stack direction="row" spacing={1}><Button fullWidth variant="outlined" startIcon={<EditRounded />} onClick={() => { setEditingMenu(menu); setDialogOpen(true) }} disabled={busy} sx={{ minHeight: 44 }}>Editar</Button><Button fullWidth variant="outlined" color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setMenuToDelete(menu)} disabled={busy} sx={{ minHeight: 44 }}>Eliminar</Button></Stack></Stack></Card></Grid>
   const renderCatalogRow = (menu: MenuViewItem) => <Paper key={menu.id} elevation={0} sx={{ p: 1.5, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}><Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'stretch', md: 'center' }} gap={1.5}><Box sx={{ flex: 1, minWidth: 0 }}><Typography sx={{ fontWeight: 800 }}>{menu.name}</Typography><Typography variant="body2" color="text.secondary" noWrap>{menu.description}</Typography></Box><Typography sx={{ color: 'primary.main', fontWeight: 800, minWidth: 55 }}>Q{menu.price}</Typography><Stack direction="row" spacing={0.75}><Button variant="outlined" startIcon={<EditRounded />} onClick={() => { setEditingMenu(menu); setDialogOpen(true) }} disabled={busy} sx={{ minHeight: 42 }}>Editar</Button><IconButton aria-label={`Eliminar ${menu.name}`} color="error" onClick={() => setMenuToDelete(menu)} disabled={busy} sx={{ border: '1px solid', borderColor: 'error.main', borderRadius: 2, width: 42, height: 42 }}><DeleteOutlineRounded /></IconButton></Stack></Stack></Paper>
 
   const renderSelectedDateGroup = (group: typeof dateMenuCategories[number]) => {
-    const items = getDailyItemsForCategory(group.category)
     const availableDishes = group.category === 'Extra' ? [] : menus.filter((menu) => menu.active && getMenuCategory(menu) === group.category)
-    const canEdit = group.category !== 'Extra' && availableDishes.length > 0
-    return <Grid item xs={12} md={6} key={group.category}><Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={1.25} sx={{ height: '100%' }}><Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box><Typography variant="h6" sx={{ fontWeight: 800 }}>{group.title}</Typography><Typography variant="body2" color="text.secondary">{isSelectedDateToday ? 'Hoy' : selectedDateLabel}</Typography></Box><Chip label={`${items.length} platos`} size="small" sx={{ bgcolor: items.length > 0 ? 'primary.light' : 'action.hover', color: items.length > 0 ? 'primary.dark' : 'text.secondary', fontWeight: 700 }} /></Stack>{items.length > 0 ? <Stack spacing={0.75} sx={{ flex: 1 }}>{items.map((item) => <Stack key={item.id} spacing={0.5}><Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>{item.name}</Typography><Typography variant="caption" color="text.secondary">Q{item.price} · Disponibles: {item.availableQuantity} · Quedan: {item.remainingQuantity}</Typography></Stack>)}</Stack> : <Typography variant="body2" color="text.secondary" sx={{ flex: 1, py: 1 }}>{group.category === 'Extra' ? 'Los extras se gestionan desde su sección.' : availableDishes.length === 0 ? 'No hay platos registrados en esta categoría.' : 'No hay menú creado para esta categoría.'}</Typography>}<Button variant="outlined" size="small" startIcon={items.length > 0 ? <EditRounded /> : <AddRounded />} onClick={() => group.category !== 'Extra' && openDailyMenuEditor(group.category)} disabled={!canEdit || busy} sx={{ alignSelf: 'flex-start' }}>{items.length > 0 ? 'Editar menú' : 'Crear menú'}</Button></Stack></Card></Grid>
+    const groups = getDailyMenuGroupsForCategory(group.category)
+    if (groups.length === 0) {
+      const canCreate = !isSelectedDatePast && group.category !== 'Extra' && availableDishes.length > 0
+      return <Grid item xs={12} md={6} key={group.category}><Card elevation={0} sx={{ height: 340, minHeight: 340, maxHeight: 340, display: 'flex', flexDirection: 'column', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={1.25} sx={{ flex: 1, minHeight: 0 }}><Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box><Typography variant="h6" sx={{ fontWeight: 800 }}>{group.title}</Typography><Typography variant="body2" color="text.secondary">{isSelectedDateToday ? 'Hoy' : selectedDateLabel}</Typography></Box><Chip label="0 platos" size="small" sx={{ bgcolor: 'action.hover', color: 'text.secondary', fontWeight: 700 }} /></Stack><Divider sx={{ my: 2, borderColor: '#E5E7F0' }} /><Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}><Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>{group.category === 'Extra' ? 'Los extras se gestionan desde su sección.' : availableDishes.length === 0 ? 'No hay platos registrados en esta categoría.' : 'No hay menú creado para esta fecha.'}</Typography>{isSelectedDatePast && <Typography variant="caption" color="text.secondary">Los menús de fechas pasadas solo se pueden consultar.</Typography>}</Box><Button variant="outlined" size="small" startIcon={<AddRounded />} onClick={() => openDailyMenuEditor(group.category as DishCategory)} disabled={!canCreate || busy} sx={{ alignSelf: 'flex-end', flexShrink: 0 }}>Crear menú</Button></Stack></Card></Grid>
+    }
+    return groups.map(({ sourceId, sourceItems }) => {
+      const pinned = sourceItems.length > 0 && sourceItems.every((item) => item.pinned)
+      const sourceDate = sourceItems[0].sourceDate ?? selectedMenuDate
+      return <Grid item xs={12} md={6} key={`${group.category}-${sourceId}`}><Card elevation={0} sx={{ height: 340, minHeight: 340, maxHeight: 340, display: 'flex', flexDirection: 'column', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={1.25} sx={{ flex: 1, minHeight: 0 }}><Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}><Box><Typography variant="h6" sx={{ fontWeight: 800 }}>{group.title}</Typography><Typography variant="body2" color="text.secondary">{sourceDate === getTodayDate() ? 'Hoy' : sourceDate}</Typography></Box><Stack direction="row" alignItems="center" gap={0.75}><Chip label={`${sourceItems.length} platos`} size="small" sx={{ bgcolor: 'primary.light', color: 'primary.dark', fontWeight: 700 }} />{pinned && <Chip label="Menú fijo" size="small" icon={<PushPinOutlined />} sx={{ bgcolor: '#EEF0FA', color: 'primary.dark', fontWeight: 700 }} />}</Stack></Stack><Divider sx={{ my: 2, borderColor: '#E5E7F0' }} /><Stack spacing={0.75} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>{sourceItems.map((item) => <Stack key={item.id} spacing={0.5}><Typography variant="body2" sx={{ fontWeight: 700, fontSize: 'calc(1em + 1px)' }} noWrap>{item.name}</Typography><Typography variant="caption" color="text.secondary" sx={{ fontSize: 'calc(1em + 1px)' }}>Q{item.price} · Disponibles: {item.availableQuantity} · Quedan: {item.remainingQuantity}</Typography></Stack>)}</Stack>{isSelectedDatePast && <Typography variant="caption" color="text.secondary">Los menús de fechas pasadas solo se pueden consultar.</Typography>}<Stack direction="row" justifyContent="flex-end" alignItems="center" spacing={1} sx={{ flexShrink: 0, width: '100%' }}><Button variant="outlined" size="small" startIcon={<EditRounded />} onClick={() => openDailyMenuEditor(group.category as DishCategory, sourceId, sourceDate)} disabled={busy || isSelectedDatePast}>Editar menú</Button><Button variant="outlined" size="small" startIcon={<PushPinOutlined />} onClick={() => void toggleDailyMenuPin(sourceId, group.category as DishCategory, !pinned)} disabled={busy}>{pinned ? 'Desfijar menú' : 'Fijar menú'}</Button></Stack></Stack></Card></Grid>
+      })
   }
 
   const renderExtraCard = (extra: Extra) => <Grid item xs={12} sm={6} lg={4} key={extra.id}><Card elevation={0} sx={{ height: '100%', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', p: 2.25 }}><Stack spacing={2} sx={{ height: '100%' }}><Box sx={{ flex: 1 }}><Typography variant="h6" sx={{ fontWeight: 800 }}>{extra.name}</Typography><Typography sx={{ color: 'primary.main', fontWeight: 800, mt: 0.5 }}>Q{extra.price}</Typography><Typography variant="body2" color={extra.active ? 'success.main' : 'text.secondary'} sx={{ mt: 1, fontWeight: 700 }}>{extra.active ? 'Activo' : 'Inactivo'}</Typography></Box><Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Switch checked={extra.active} onChange={() => void toggleExtra(extra)} disabled={busy} inputProps={{ 'aria-label': `Activo: ${extra.name}` }} /><Stack direction="row" spacing={0.75}><Button variant="outlined" startIcon={<EditRounded />} onClick={() => { setEditingExtra(extra); setExtraDialogOpen(true) }} disabled={busy} sx={{ minHeight: 44 }}>Editar</Button><IconButton aria-label={`Eliminar ${extra.name}`} color="error" onClick={() => setExtraToDelete(extra)} disabled={busy} sx={{ border: '1px solid', borderColor: 'error.main', borderRadius: 2, width: 42, height: 42 }}><DeleteOutlineRounded /></IconButton></Stack></Stack></Stack></Card></Grid>
@@ -326,12 +401,12 @@ export function MenuManagementView({ section = 'Menús' }: MenuManagementViewPro
   const sectionDescription = section === 'Menús' ? 'Organiza los platos disponibles del comedor.' : section === 'Extras' ? 'Gestiona los extras disponibles para los pedidos.' : `Organiza los platos disponibles para ${section.toLocaleLowerCase()}.`
 
   return <Box component="section" aria-labelledby="menu-title">
-    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-end' }} gap={2} sx={{ mb: section === 'Menús' ? 2 : 3 }}><Box><Typography id="menu-title" variant="h4" sx={{ fontWeight: 800, fontSize: '1.8125rem' }}>{sectionTitle}</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>{sectionDescription}</Typography></Box><Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}><>{section === 'Menús' && <Button variant="contained" startIcon={<AddRounded />} onClick={() => { setNewDailyMenuDate(selectedMenuDate); setNewDailyMenuDialogOpen(true) }} disabled={busy} sx={{ minHeight: 56, minWidth: { sm: 170 }, fontWeight: 800 }}>Crear menú</Button>}</><ToggleButtonGroup value={viewMode} exclusive onChange={(_, value: ViewMode | null) => value && setViewMode(value)} aria-label="Vista de platos" size="large" sx={{ alignSelf: { xs: 'flex-start', sm: 'auto' }, bgcolor: 'background.paper' }}><ToggleButton value="cards" aria-label="Vista Tarjetas" sx={{ minWidth: 52 }}><GridView /></ToggleButton><ToggleButton value="list" aria-label="Vista Lista" sx={{ minWidth: 52 }}><ViewList /></ToggleButton></ToggleButtonGroup></Stack></Stack>
+    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-end' }} gap={2} sx={{ mb: section === 'Menús' ? 2 : 3 }}><Box><Typography id="menu-title" variant="h4" sx={{ fontWeight: 800, fontSize: '1.8125rem' }}>{sectionTitle}</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>{sectionDescription}</Typography></Box><Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}><>{section === 'Menús' && <Button variant="contained" startIcon={<AddRounded />} onClick={() => { setNewDailyMenuDate(selectedMenuDate); setNewDailyMenuDialogOpen(true) }} disabled={busy || isSelectedDatePast} sx={{ minHeight: 56, minWidth: { sm: 170 }, fontWeight: 800 }}>Crear menú</Button>}</><ToggleButtonGroup value={viewMode} exclusive onChange={(_, value: ViewMode | null) => value && setViewMode(value)} aria-label="Vista de platos" size="large" sx={{ alignSelf: { xs: 'flex-start', sm: 'auto' }, bgcolor: 'background.paper' }}><ToggleButton value="cards" aria-label="Vista Tarjetas" sx={{ minWidth: 52 }}><GridView /></ToggleButton><ToggleButton value="list" aria-label="Vista Lista" sx={{ minWidth: 52 }}><ViewList /></ToggleButton></ToggleButtonGroup></Stack></Stack>
     {section !== 'Menús' && <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}><TextField fullWidth value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isExtrasSection ? 'Buscar extra...' : 'Buscar plato...'} aria-label={isExtrasSection ? 'Buscar extra' : 'Buscar plato'} InputProps={{ startAdornment: <InputAdornment position="start"><SearchRounded color="action" /></InputAdornment> }} />{!isExtrasSection && <Button variant="contained" startIcon={<AddRounded />} onClick={() => { setEditingMenu(null); setDialogOpen(true) }} disabled={busy} sx={{ minHeight: 56, minWidth: { sm: 170 }, fontWeight: 800 }}>Crear plato</Button>}</Stack>}
     {section === 'Menús' && <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" gap={1.5} sx={{ mb: 3 }}><Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 600 }}>Fecha consultada: {selectedDateLabel}</Typography><Stack direction="row" alignItems="center" spacing={0.75}><IconButton aria-label="Día anterior" onClick={() => moveSelectedMenuDate(-1)} disabled={loading}><ChevronLeftRounded /></IconButton><TextField type="date" value={selectedMenuDate} onChange={(event) => changeSelectedMenuDate(event.target.value)} size="small" InputProps={{ startAdornment: <InputAdornment position="start"><CalendarMonthRounded fontSize="small" /></InputAdornment> }} inputProps={{ 'aria-label': 'Seleccionar fecha del menú' }} /><IconButton aria-label="Día siguiente" onClick={() => moveSelectedMenuDate(1)} disabled={loading}><ChevronRightRounded /></IconButton><Button size="small" variant="outlined" onClick={() => changeSelectedMenuDate(getTodayDate())} disabled={isSelectedDateToday || loading}>Hoy</Button></Stack></Stack>}
     {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
     {!isExtrasSection && <>{section === 'Menús' && <>
-    <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid', borderColor: 'divider', mb: 4 }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ mb: 2 }}><Box><Typography variant="h5" sx={{ fontWeight: 800 }}>Menús por fecha</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>{selectedDateLabel}{isSelectedDateToday ? ' · Hoy' : ''}</Typography><Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1.5 }}><Button size="small" variant="outlined" startIcon={<EditRounded />} onClick={() => { const firstCategory = dateMenuCategories.find((group) => group.category !== 'Extra' && getDailyItemsForCategory(group.category).length > 0)?.category; if (firstCategory) openDailyMenuEditor(firstCategory) }} disabled={busy || dateMenuCount === 0}>Editar menú</Button><Button size="small" variant="outlined" startIcon={<AddRounded />} onClick={() => { setNewDailyMenuDate(selectedMenuDate); setNewDailyMenuDialogOpen(true) }} disabled={busy}>Crear nuevo menú</Button></Stack></Box><Stack alignItems={{ xs: 'flex-start', sm: 'flex-end' }}><Typography sx={{ color: '#5F6272', fontWeight: 600 }}>{dateMenuCount} menús · {dailyItems.length} platos disponibles</Typography>{dailyMenuId && dailyUpdatedAt ? <Typography variant="body2" sx={{ color: '#8A8E9F', fontWeight: 400 }}>Actualizado: {formatUpdatedAt(dailyUpdatedAt)}</Typography> : <Typography variant="body2" sx={{ color: '#8A8E9F', fontWeight: 400 }}>Aún no ha sido guardado.</Typography>}</Stack></Stack>{!dailyMenuId && <Typography color="text.secondary" sx={{ mb: 2 }}>No hay menús creados para esta fecha.</Typography>}<Grid container spacing={1.5}>{dateMenuCategories.map(renderSelectedDateGroup)}</Grid></Paper>
+    <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid', borderColor: 'divider', mb: 4 }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ mb: 2 }}><Box><Typography variant="h5" sx={{ fontWeight: 800 }}>Menús por fecha</Typography><Typography color="text.secondary" sx={{ mt: 0.5 }}>{selectedDateLabel}{isSelectedDateToday ? ' · Hoy' : ''}</Typography></Box><Stack alignItems={{ xs: 'flex-start', sm: 'flex-end' }}><Typography sx={{ color: '#5F6272', fontWeight: 600 }}>{dateMenuCount} menús · {dailyItems.length} platos disponibles</Typography>{dailyMenuId && dailyUpdatedAt ? <Typography variant="body2" sx={{ color: '#8A8E9F', fontWeight: 400 }}>Actualizado: {formatUpdatedAt(dailyUpdatedAt)}</Typography> : <Typography variant="body2" sx={{ color: '#8A8E9F', fontWeight: 400 }}>Aún no ha sido guardado.</Typography>}</Stack></Stack>{!dailyMenuId && dateMenuCount === 0 && <Typography color="text.secondary" sx={{ mb: 2 }}>No hay menús creados para esta fecha.</Typography>}<Grid container alignItems="flex-start" spacing={1.5}>{dateMenuCategories.map(renderSelectedDateGroup)}</Grid></Paper>
     </>}{section !== 'Menús' && <>
       <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={2} sx={{ mb: 2 }}><Typography variant="h5" sx={{ fontWeight: 800 }}>Platos disponibles</Typography><Typography variant="body2" color="text.secondary">{filteredMenus.length === 0 ? 'No se encontraron platos.' : `Mostrando ${firstItem}–${lastItem} de ${filteredMenus.length} platos`}</Typography></Stack>
       {filteredMenus.length > 0 ? viewMode === 'cards' ? <Grid container spacing={1.5}>{paginatedMenus.map((menu) => renderCatalogCard(toViewMenu(menu)))}</Grid> : <Stack spacing={1}>{paginatedMenus.map((menu) => renderCatalogRow(toViewMenu(menu)))}</Stack> : <Typography color="text.secondary" sx={{ py: 5, textAlign: 'center' }}>No se encontraron platos.</Typography>}

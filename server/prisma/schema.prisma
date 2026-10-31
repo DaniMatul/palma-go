@@ -61,6 +61,7 @@ model DailyMenuItem {
   menuItemId        String
   price             Decimal     @default(0)
   active            Boolean     @default(true)
+  pinned            Boolean     @default(false)
   availableQuantity Int         @default(0)
   remainingQuantity Int         @default(0)
   soldQuantity      Int         @default(0)

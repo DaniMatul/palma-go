@@ -6,6 +6,8 @@ export type DailyMenuItemInput = {
   availableQuantity: number
 }
 
+export type DailyMenuPinCategory = 'BREAKFAST' | 'SNACK' | 'LUNCH'
+
 export class DailyMenuValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -27,6 +29,13 @@ export class DailyMenuAlreadyExistsError extends Error {
   }
 }
 
+export class DailyMenuPastDateError extends Error {
+  constructor() {
+    super('No se pueden crear ni editar menús de fechas pasadas')
+    this.name = 'DailyMenuPastDateError'
+  }
+}
+
 export function businessDateFromString(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const [year, month, day] = value.split('-').map(Number)
@@ -43,6 +52,11 @@ export function todayBusinessDate() {
   }).formatToParts(new Date())
   const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
   return `${values.year}-${values.month}-${values.day}`
+}
+
+function assertEditableBusinessDate(date: Date) {
+  const today = businessDateFromString(todayBusinessDate())
+  if (today && date.getTime() < today.getTime()) throw new DailyMenuPastDateError()
 }
 
 export function formatBusinessDate(date: Date) {
@@ -62,18 +76,19 @@ function serializeDailyMenu(dailyMenu: {
     active: boolean
     availableQuantity: number
     remainingQuantity: number
+    pinned: boolean
     soldQuantity: number
     revenue: unknown
     menuItem: { id: string; name: string; description: string; price: unknown }
   }>
-}) {
+}, pinnedOnly = false) {
   return {
     id: dailyMenu.id,
     date: formatBusinessDate(dailyMenu.date),
     status: dailyMenu.status,
     createdAt: dailyMenu.createdAt.toISOString(),
     updatedAt: dailyMenu.updatedAt.toISOString(),
-    items: [...dailyMenu.items].filter((item) => item.active)
+    items: [...dailyMenu.items].filter((item) => item.active && (!pinnedOnly || item.pinned))
       .sort((a, b) => a.menuItem.name.localeCompare(b.menuItem.name, 'es'))
       .map((item) => ({
         id: item.id,
@@ -85,6 +100,9 @@ function serializeDailyMenu(dailyMenu: {
         remainingQuantity: item.remainingQuantity,
         soldQuantity: item.soldQuantity,
         revenue: item.revenue,
+        pinned: item.pinned,
+        sourceDailyMenuId: dailyMenu.id,
+        sourceDate: formatBusinessDate(dailyMenu.date),
       })),
   }
 }
@@ -99,12 +117,30 @@ const dailyMenuInclude = {
   },
 } satisfies Prisma.DailyMenuInclude
 
-export async function getDailyMenu(date: Date) {
-  const dailyMenu = await prisma.dailyMenu.findFirst({ where: { date, status: 'ACTIVE' }, include: dailyMenuInclude })
-  return dailyMenu ? serializeDailyMenu(dailyMenu) : { id: null, date: formatBusinessDate(date), createdAt: null, updatedAt: null, items: [] }
+export async function getDailyMenu(date: Date, includePinned = false) {
+  const dailyMenus = await prisma.dailyMenu.findMany({
+    where: includePinned
+      ? { OR: [{ date }, { date: { lte: date }, items: { some: { active: true, pinned: true } } }] }
+      : { date, status: 'ACTIVE' },
+    orderBy: { date: 'asc' },
+    include: dailyMenuInclude,
+  })
+  const selectedMenu = dailyMenus.find((dailyMenu) => dailyMenu.date.getTime() === date.getTime()) ?? null
+  if (!includePinned) return selectedMenu ? serializeDailyMenu(selectedMenu) : { id: null, date: formatBusinessDate(date), createdAt: null, updatedAt: null, items: [] }
+
+  const serializedMenus = dailyMenus.map((dailyMenu) => serializeDailyMenu(dailyMenu, dailyMenu.id !== selectedMenu?.id))
+  return {
+    id: selectedMenu?.id ?? null,
+    date: formatBusinessDate(date),
+    status: selectedMenu?.status ?? null,
+    createdAt: selectedMenu?.createdAt.toISOString() ?? null,
+    updatedAt: selectedMenu?.updatedAt.toISOString() ?? null,
+    items: serializedMenus.flatMap((menu) => menu.items),
+  }
 }
 
-export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], mode: 'upsert' | 'create' = 'upsert') {
+export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], mode: 'upsert' | 'create' = 'upsert', targetDailyMenuId?: string) {
+  assertEditableBusinessDate(date)
   return prisma.$transaction(async (transaction) => {
     const menuItems = await transaction.menuItem.findMany({
       where: { id: { in: items.map((item) => item.menuItemId) }, active: true },
@@ -113,7 +149,12 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
     const activeMenuItemIds = new Set(menuItems.map((menuItem) => menuItem.id))
     if (items.some((item) => !activeMenuItemIds.has(item.menuItemId))) throw new DailyMenuMenuItemNotFoundError()
 
-    const existingDailyMenu = await transaction.dailyMenu.findFirst({ where: { date, status: 'ACTIVE' }, include: { items: true } })
+    const existingDailyMenu = targetDailyMenuId
+      ? await transaction.dailyMenu.findUnique({ where: { id: targetDailyMenuId }, include: { items: true } })
+      : await transaction.dailyMenu.findFirst({ where: { date, status: 'ACTIVE' }, include: { items: true } })
+    if (existingDailyMenu && existingDailyMenu.date.getTime() !== date.getTime()) {
+      throw new DailyMenuPastDateError()
+    }
     if (mode === 'create' || !existingDailyMenu) {
       await transaction.dailyMenu.updateMany({ where: { status: 'ACTIVE' }, data: { status: 'CLOSED' } })
     }
@@ -157,6 +198,20 @@ export async function replaceDailyMenu(date: Date, items: DailyMenuItemInput[], 
     const menu = serializeDailyMenu(result)
     console.log('DailyMenu updatedAt:', menu.updatedAt)
     return { created, menu }
+  })
+}
+
+export async function setDailyMenuPin(dailyMenuId: string, category: DailyMenuPinCategory, pinned: boolean) {
+  return prisma.$transaction(async (transaction) => {
+    const dailyMenu = await transaction.dailyMenu.findUnique({ where: { id: dailyMenuId } })
+    if (!dailyMenu) return null
+    const result = await transaction.dailyMenuItem.updateMany({
+      where: { dailyMenuId, active: true, menuItem: { category } },
+      data: { pinned },
+    })
+    if (result.count === 0) return null
+    await transaction.dailyMenu.update({ where: { id: dailyMenuId }, data: { updatedAt: new Date() } })
+    return { dailyMenuId, category, pinned }
   })
 }
 

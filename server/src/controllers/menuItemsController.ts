@@ -31,7 +31,7 @@ function validationError(message: string) {
   return { error: message }
 }
 
-const validCategories = new Set(['BREAKFAST', 'SNACK', 'LUNCH', 'DINNER'])
+const validCategories = new Set(['BREAKFAST', 'SNACK', 'LUNCH'])
 
 function parseCategory(value: unknown): MenuCategory | null {
   return typeof value === 'string' && validCategories.has(value) ? value as MenuCategory : null
@@ -55,7 +55,7 @@ export async function postMenuItem(request: Request, response: Response) {
 
     if (!name) return response.status(400).json(validationError('El nombre es obligatorio'))
     if (price === null) return response.status(400).json(validationError('El precio es obligatorio y debe ser mayor que 0'))
-    if (!category) return response.status(400).json(validationError('La categoría es obligatoria y debe ser BREAKFAST, SNACK, LUNCH o DINNER'))
+    if (!category) return response.status(400).json(validationError('La categoría es obligatoria y debe ser BREAKFAST, SNACK o LUNCH'))
 
     const menuItem = await createMenuItem({ name, description, price, category })
     return response.status(201).json(menuItem)
@@ -86,7 +86,7 @@ export async function putMenuItem(request: Request, response: Response) {
     }
     if (body.category !== undefined) {
       const category = parseCategory(body.category)
-      if (!category) return response.status(400).json(validationError('La categoría debe ser BREAKFAST, SNACK, LUNCH o DINNER'))
+      if (!category) return response.status(400).json(validationError('La categoría debe ser BREAKFAST, SNACK o LUNCH'))
       data.category = category
     }
     if (body.active !== undefined) {
