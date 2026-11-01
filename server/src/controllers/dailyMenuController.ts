@@ -3,16 +3,19 @@ import {
   businessDateFromString,
   DailyMenuAlreadyExistsError,
   DailyMenuMenuItemNotFoundError,
+  DailyMenuPastDateError,
   DailyMenuValidationError,
   getDailyMenu,
   replaceDailyMenu,
   resetDailyMenu,
+  setDailyMenuPin,
   todayBusinessDate,
 } from '../services/dailyMenuService.js'
 
 type DailyMenuBody = {
   date?: unknown
   items?: unknown
+  dailyMenuId?: unknown
 }
 
 function errorResponse(response: Response, status: number, message: string) {
@@ -48,6 +51,7 @@ export async function postDailyMenuController(request: Request, response: Respon
   } catch (error) {
     if (error instanceof DailyMenuValidationError) return errorResponse(response, 400, error.message)
     if (error instanceof DailyMenuMenuItemNotFoundError) return errorResponse(response, 404, error.message)
+    if (error instanceof DailyMenuPastDateError) return errorResponse(response, 400, error.message)
     if (error instanceof DailyMenuAlreadyExistsError) return errorResponse(response, 409, error.message)
     return errorResponse(response, 500, 'No se pudo crear el menú del día')
   }
@@ -60,7 +64,8 @@ export async function getDailyMenuController(request: Request, response: Respons
     const date = businessDateFromString(dateString)
     if (!date) return errorResponse(response, 400, 'date debe tener el formato YYYY-MM-DD y ser válida')
 
-    return response.status(200).json(await getDailyMenu(date))
+    const includePinned = request.query.includePinned === 'true'
+    return response.status(200).json(await getDailyMenu(date, includePinned))
   } catch {
     return errorResponse(response, 500, 'No se pudo obtener el menú del día')
   }
@@ -77,12 +82,30 @@ export async function putDailyMenuController(request: Request, response: Respons
     if (!date) return errorResponse(response, 400, 'date es obligatorio y debe tener el formato YYYY-MM-DD')
 
     const items = parseItems(body.items)
-    const result = await replaceDailyMenu(date, items)
+    const targetDailyMenuId = typeof body.dailyMenuId === 'string' ? body.dailyMenuId : undefined
+    const result = await replaceDailyMenu(date, items, 'upsert', targetDailyMenuId)
     return response.status(result.created ? 201 : 200).json(result.menu)
   } catch (error) {
     if (error instanceof DailyMenuValidationError) return errorResponse(response, 400, error.message)
     if (error instanceof DailyMenuMenuItemNotFoundError) return errorResponse(response, 404, error.message)
+    if (error instanceof DailyMenuPastDateError) return errorResponse(response, 400, error.message)
     return errorResponse(response, 500, 'No se pudo actualizar el menú del día')
+  }
+}
+
+export async function patchDailyMenuPinController(request: Request, response: Response) {
+  try {
+    const dailyMenuId = typeof request.params.id === 'string' ? request.params.id : ''
+    const category = request.body?.category
+    const pinned = request.body?.pinned
+    if (!dailyMenuId || !['BREAKFAST', 'SNACK', 'LUNCH'].includes(category) || typeof pinned !== 'boolean') {
+      return errorResponse(response, 400, 'id, category y pinned son obligatorios y válidos')
+    }
+    const result = await setDailyMenuPin(dailyMenuId, category, pinned)
+    if (!result) return errorResponse(response, 404, 'No se encontró un menú con platos de esa categoría')
+    return response.status(200).json(result)
+  } catch {
+    return errorResponse(response, 500, 'No se pudo actualizar el fijado del menú')
   }
 }
 
@@ -93,7 +116,8 @@ export async function resetDailyMenuController(request: Request, response: Respo
     const date = businessDateFromString(dateString)
     if (!date) return errorResponse(response, 400, 'date es obligatorio y debe tener el formato YYYY-MM-DD')
     return response.status(201).json(await resetDailyMenu(date))
-  } catch {
+  } catch (error) {
+    if (error instanceof DailyMenuPastDateError) return errorResponse(response, 400, error.message)
     return errorResponse(response, 500, 'No se pudo crear el nuevo menú del día')
   }
 }
