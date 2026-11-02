@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { OrderItemType, OrderStatus } from '@prisma/client'
+import { OrderItemOptionAction, OrderItemType, OrderStatus } from '@prisma/client'
 import {
   changeOrderStatus,
   createOrder,
@@ -10,6 +10,8 @@ import {
   OrderItemNotFoundError,
   OrderNotFoundError,
   OrderNumberConflictError,
+  OrderIdempotencyConflictError,
+  OrderIdempotencyResolutionError,
   OrderStatusTransitionError,
   OrderValidationError,
   listOrders,
@@ -28,6 +30,27 @@ function parseQuantity(value: unknown) {
   return Number.isInteger(quantity) && quantity > 0 ? quantity : null
 }
 
+function parseOrderOptions(value: unknown) {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new OrderValidationError('options debe ser un arreglo')
+  return value.map((rawOption) => {
+    if (typeof rawOption !== 'object' || rawOption === null || Array.isArray(rawOption)) throw new OrderValidationError('Cada opción debe ser un objeto')
+    const option = rawOption as Record<string, unknown>
+    const dailyMenuOptionId = typeof option.dailyMenuOptionId === 'string' ? option.dailyMenuOptionId.trim() : ''
+    const action = option.action === undefined ? undefined : option.action
+    const quantity = option.quantity === undefined ? undefined : parseQuantity(option.quantity)
+    if (!dailyMenuOptionId) throw new OrderValidationError('dailyMenuOptionId es obligatorio')
+    if (action !== undefined && !Object.values(OrderItemOptionAction).includes(action as OrderItemOptionAction)) throw new OrderValidationError('action de opción no es válido')
+    if (option.quantity !== undefined && quantity === null) throw new OrderValidationError('quantity de opción debe ser un entero mayor que 0')
+    return {
+      dailyMenuOptionId,
+      action: action as OrderItemOptionAction | undefined,
+      quantity: quantity ?? undefined,
+      replacesDailyMenuOptionId: typeof option.replacesDailyMenuOptionId === 'string' ? option.replacesDailyMenuOptionId : undefined,
+    }
+  })
+}
+
 function parseOrderItems(value: unknown): CreateOrderItemInput[] {
   if (!Array.isArray(value) || value.length === 0) throw new OrderValidationError('items debe tener al menos un elemento')
   return value.map((rawItem) => {
@@ -44,6 +67,7 @@ function parseOrderItems(value: unknown): CreateOrderItemInput[] {
       extraId: typeof item.extraId === 'string' || typeof item.extraId === 'number' ? String(item.extraId) : undefined,
       description: typeof item.description === 'string' ? item.description : undefined,
       unitPrice: item.unitPrice === undefined ? undefined : Number(item.unitPrice),
+      options: parseOrderOptions(item.options),
     }
   })
 }
@@ -62,6 +86,11 @@ export async function postOrder(request: Request, response: Response) {
   try {
     if (typeof request.body !== 'object' || request.body === null || Array.isArray(request.body)) return respondError(response, 400, 'El body debe ser un objeto')
     const body = request.body as OrderBody
+    const rawIdempotencyKey = request.get('Idempotency-Key')
+    const idempotencyKey = rawIdempotencyKey?.trim()
+    if (rawIdempotencyKey !== undefined && (!idempotencyKey || idempotencyKey.length > 200)) {
+      return respondError(response, 400, 'Idempotency-Key debe ser un valor no vacío de máximo 200 caracteres')
+    }
     const customerName = typeof body.customerName === 'string' ? body.customerName.trim() : ''
     const address = typeof body.address === 'string' ? body.address.trim() : ''
     if (!customerName) return respondError(response, 400, 'customerName es obligatorio')
@@ -75,13 +104,15 @@ export async function postOrder(request: Request, response: Response) {
       promiseTime = new Date(body.promiseTime)
       if (Number.isNaN(promiseTime.getTime())) return respondError(response, 400, 'promiseTime no es válido')
     }
-    return response.status(201).json(await createOrder({ customerName, address, accounts, promiseTime }))
+    return response.status(201).json(await createOrder({ customerName, address, accounts, promiseTime }, idempotencyKey))
   } catch (error) {
     if (error instanceof OrderValidationError) return respondError(response, 400, error.message)
     if (error instanceof OrderItemNotFoundError) return respondError(response, 404, error.message)
     if (error instanceof OrderAvailabilityError) return respondError(response, 409, error.message)
     if (error instanceof ActiveDailyMenuNotFoundError) return respondError(response, 409, error.message)
     if (error instanceof OrderNumberConflictError) return respondError(response, 409, error.message)
+    if (error instanceof OrderIdempotencyConflictError) return respondError(response, 409, error.message)
+    if (error instanceof OrderIdempotencyResolutionError) return respondError(response, 409, error.message)
     return respondError(response, 500, 'No se pudo crear el pedido')
   }
 }

@@ -25,11 +25,44 @@ enum DailyMenuStatus {
   CLOSED
 }
 
+enum DailyMenuInventoryMode {
+  LEGACY
+  OPTIONS
+}
+
 enum MenuCategory {
   BREAKFAST
   SNACK
   LUNCH
   DINNER
+}
+
+enum MenuOptionKind {
+  PRIMARY
+  COMPLEMENT
+  EXTRA
+}
+
+enum MenuItemOptionRole {
+  PRIMARY_INCLUDED
+  COMPLEMENT_INCLUDED
+  PRIMARY_ADDITIONAL
+  COMPLEMENT_OPTIONAL
+  EXTRA_OPTIONAL
+}
+
+enum DailyMenuItemOptionRole {
+  PRIMARY_INCLUDED
+  COMPLEMENT_INCLUDED
+  PRIMARY_ADDITIONAL
+  COMPLEMENT_OPTIONAL
+  EXTRA_OPTIONAL
+}
+
+enum OrderItemOptionAction {
+  INCLUDED
+  REPLACED
+  ADDED
 }
 
 model MenuItem {
@@ -43,16 +76,18 @@ model MenuItem {
   updatedAt      DateTime        @updatedAt
   dailyMenuItems DailyMenuItem[]
   orderItems     OrderItem[]
+  optionDefinitions MenuItemOption[]
 }
 
 model DailyMenu {
   id        String          @id @default(cuid())
-  date      DateTime
+  date      DateTime        @unique
   status    DailyMenuStatus @default(ACTIVE)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
   items     DailyMenuItem[]
   orders    Order[]
+  dailyOptions DailyMenuOption[]
 }
 
 model DailyMenuItem {
@@ -62,6 +97,7 @@ model DailyMenuItem {
   price             Decimal     @default(0)
   active            Boolean     @default(true)
   pinned            Boolean     @default(false)
+  inventoryMode     DailyMenuInventoryMode @default(LEGACY)
   availableQuantity Int         @default(0)
   remainingQuantity Int         @default(0)
   soldQuantity      Int         @default(0)
@@ -69,6 +105,8 @@ model DailyMenuItem {
   dailyMenu         DailyMenu   @relation(fields: [dailyMenuId], references: [id], onDelete: Cascade)
   menuItem          MenuItem    @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   orderItems        OrderItem[]
+  optionAssignments DailyMenuItemOption[]
+  inventoryAllocations OrderInventoryAllocation[]
 
   @@unique([dailyMenuId, menuItemId])
 }
@@ -81,6 +119,84 @@ model Extra {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   orderItems OrderItem[]
+  canonicalOption MenuOption? @relation("ExtraCanonicalOption")
+}
+
+model MenuOption {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?
+  price         Decimal
+  kind          MenuOptionKind
+  active        Boolean         @default(true)
+  legacyExtraId String?         @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  legacyExtra     Extra?                  @relation("ExtraCanonicalOption", fields: [legacyExtraId], references: [id], onDelete: SetNull)
+  categories      MenuOptionCategory[]
+  menuItemOptions MenuItemOption[]
+  dailyOptions    DailyMenuOption[]
+
+  @@index([kind, active])
+}
+
+model MenuOptionCategory {
+  id       String       @id @default(cuid())
+  optionId String
+  category MenuCategory
+  active   Boolean      @default(true)
+
+  option MenuOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, category])
+}
+
+model MenuItemOption {
+  id         String             @id @default(cuid())
+  menuItemId String
+  optionId   String
+  role       MenuItemOptionRole
+  quantity   Int                @default(1)
+  active     Boolean            @default(true)
+
+  menuItem MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  option   MenuOption @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@unique([menuItemId, optionId, role])
+}
+
+model DailyMenuOption {
+  id                String       @id @default(cuid())
+  dailyMenuId       String
+  optionId          String
+  category          MenuCategory
+  price             Decimal
+  available         Boolean      @default(true)
+  initialQuantity   Int?
+  remainingQuantity Int?
+  soldQuantity      Int          @default(0)
+
+  dailyMenu   DailyMenu                  @relation(fields: [dailyMenuId], references: [id], onDelete: Cascade)
+  option      MenuOption                 @relation(fields: [optionId], references: [id], onDelete: Restrict)
+  assignments DailyMenuItemOption[]
+  allocations OrderInventoryAllocation[]
+  orderOptions OrderItemOption[]
+
+  @@unique([dailyMenuId, category, optionId])
+}
+
+model DailyMenuItemOption {
+  id                String                   @id @default(cuid())
+  dailyMenuItemId   String
+  dailyMenuOptionId String
+  role              DailyMenuItemOptionRole
+  included          Boolean                  @default(false)
+
+  dailyMenuItem   DailyMenuItem   @relation(fields: [dailyMenuItemId], references: [id], onDelete: Cascade)
+  dailyMenuOption DailyMenuOption @relation(fields: [dailyMenuOptionId], references: [id], onDelete: Restrict)
+
+  @@unique([dailyMenuItemId, dailyMenuOptionId, role])
 }
 
 model Order {
@@ -94,9 +210,12 @@ model Order {
   status       OrderStatus @default(IN_PROGRESS)
   total        Decimal
   dailyMenuId  String?
+  idempotencyKey         String? @unique
+  idempotencyFingerprint String?
   items        OrderItem[]
   accounts     OrderAccount[]
   dailyMenu    DailyMenu?  @relation(fields: [dailyMenuId], references: [id], onDelete: SetNull)
+  inventoryAllocations OrderInventoryAllocation[]
 
   @@unique([orderDate, dailyNumber])
 }
@@ -129,4 +248,45 @@ model OrderItem {
   menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   extra           Extra?         @relation(fields: [extraId], references: [id], onDelete: Restrict)
   dailyMenuItem   DailyMenuItem? @relation(fields: [dailyMenuItemId], references: [id], onDelete: Restrict)
+  options         OrderItemOption[]
+}
+
+model OrderItemOption {
+  id                  String                   @id @default(cuid())
+  orderItemId         String
+  dailyMenuOptionId   String?
+  action              OrderItemOptionAction
+  description         String
+  unitPrice           Decimal
+  quantity            Int
+  charge              Decimal
+  replacedDescription String?
+  replacedUnitPrice   Decimal?
+
+  orderItem       OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  dailyMenuOption DailyMenuOption? @relation(fields: [dailyMenuOptionId], references: [id], onDelete: Restrict)
+  allocations     OrderInventoryAllocation[]
+
+  @@index([orderItemId])
+}
+
+model OrderInventoryAllocation {
+  id                String   @id @default(cuid())
+  orderId           String
+  orderItemOptionId String
+  dailyMenuOptionId String?
+  dailyMenuItemId   String?
+  quantity          Int
+  reservedAt        DateTime @default(now())
+  releasedAt        DateTime?
+  releaseReason     String?
+
+  order           Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemOption OrderItemOption @relation(fields: [orderItemOptionId], references: [id], onDelete: Cascade)
+  dailyMenuOption DailyMenuOption? @relation(fields: [dailyMenuOptionId], references: [id], onDelete: Restrict)
+  dailyMenuItem   DailyMenuItem?   @relation(fields: [dailyMenuItemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([dailyMenuOptionId, releasedAt])
+  @@index([dailyMenuItemId, releasedAt])
 }

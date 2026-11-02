@@ -1,9 +1,12 @@
 import 'dotenv/config'
 import express from 'express'
 import { dailyMenuRouter } from './routes/dailyMenu.js'
+import { dailyMenuOptionsRouter } from './routes/dailyMenuOptions.js'
 import { dashboardRouter } from './routes/dashboard.js'
 import { extrasRouter } from './routes/extras.js'
 import { menuItemsRouter } from './routes/menuItems.js'
+import { menuItemOptionsRouter } from './routes/menuItemOptions.js'
+import { menuOptionsRouter } from './routes/menuOptions.js'
 import { ordersRouter } from './routes/orders.js'
 
 const app = express()
@@ -33,8 +36,11 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.use('/api/menu-items', menuItemsRouter)
+app.use('/api/menu-items', menuItemOptionsRouter)
+app.use('/api/menu-options', menuOptionsRouter)
 app.use('/api/extras', extrasRouter)
 app.use('/api/daily-menu', dailyMenuRouter)
+app.use('/api/daily-menu-options', dailyMenuOptionsRouter)
 app.use('/api/dashboard', dashboardRouter)
 app.use('/api/orders', ordersRouter)
 
