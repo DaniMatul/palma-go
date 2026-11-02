@@ -4,7 +4,7 @@ import { Close } from '@mui/icons-material'
 import { MenuCategory, MenuItem } from '../types/menu'
 
 type DishCategory = Exclude<MenuCategory, 'Extra' | 'Cena'>
-type MenuDialogProps = { open: boolean; menu: MenuItem | null; initialCategory?: DishCategory | 'Cena' | null; onClose: () => void; onSave: (menu: { id?: string; name: string; description: string; price: number; active: boolean; category?: DishCategory }) => void }
+type MenuDialogProps = { open: boolean; menu: MenuItem | null; initialCategory?: DishCategory | null; onClose: () => void; onSave: (menu: { id?: string; name: string; description: string; price: number; active: boolean; category?: DishCategory }) => void }
 
 export function MenuDialog({ open, menu, initialCategory = 'Almuerzo', onClose, onSave }: MenuDialogProps) {
   const [name, setName] = useState('')
@@ -17,7 +17,7 @@ export function MenuDialog({ open, menu, initialCategory = 'Almuerzo', onClose, 
     setName(menu?.name ?? '')
     setDescription(menu?.description ?? '')
     setPrice(menu ? String(menu.price) : '')
-    setDishType(menu?.category === 'DINNER' ? '' : initialCategory && initialCategory !== 'Cena' ? initialCategory : '')
+    setDishType(menu?.category === 'DINNER' ? '' : initialCategory ?? '')
     setSubmitted(false)
   }, [initialCategory, menu, open])
 

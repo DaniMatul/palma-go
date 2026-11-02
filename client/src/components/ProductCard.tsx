@@ -1,5 +1,5 @@
-import { AddRounded, RemoveRounded } from '@mui/icons-material'
-import { Box, Card, IconButton, Stack, Typography } from '@mui/material'
+import { AddRounded, RemoveRounded, TuneRounded } from '@mui/icons-material'
+import { Box, Button, Card, IconButton, Stack, Typography } from '@mui/material'
 import { DailyMenuItem, MenuProduct } from '../types/menu'
 
 type ProductCardProps = {
@@ -7,9 +7,10 @@ type ProductCardProps = {
   quantity: number
   onIncrease: () => void
   onDecrease: () => void
+  onCustomize?: () => void
 }
 
-export function ProductCard({ product, quantity, onIncrease, onDecrease }: ProductCardProps) {
+export function ProductCard({ product, quantity, onIncrease, onDecrease, onCustomize }: ProductCardProps) {
   const availableQuantity = 'remainingQuantity' in product ? product.remainingQuantity : product.availableQuantity
   const remaining = Math.max(0, availableQuantity - quantity)
   return (
@@ -30,6 +31,7 @@ export function ProductCard({ product, quantity, onIncrease, onDecrease }: Produ
             <AddRounded />
           </IconButton>
         </Stack>
+        {onCustomize && <Button size="small" variant="text" startIcon={<TuneRounded />} onClick={onCustomize} disabled={availableQuantity === 0}>Personalizar</Button>}
       </Stack>
     </Card>
   )

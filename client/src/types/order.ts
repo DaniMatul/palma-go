@@ -6,6 +6,7 @@ export type OrderItem = {
   quantity: number
   price: number
   subtotal?: number
+  options?: Array<{ id?: string; action: 'INCLUDED' | 'REPLACED' | 'ADDED'; description: string; quantity: number; unitPrice: number; charge: number; replacedDescription?: string | null }>
 }
 
 export type OrderAccount = {

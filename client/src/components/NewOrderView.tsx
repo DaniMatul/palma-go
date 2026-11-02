@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { AddCircleOutlineRounded, MoreVertRounded, PersonAddAltRounded } from '@mui/icons-material'
 import { Alert, Box, Button, Card, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Grid, IconButton, Menu, MenuItem, Snackbar, Stack, TextField, Typography } from '@mui/material'
 import { getDailyMenu } from '../services/dailyMenuService'
+import { CreateOrderCustomization, getDailyMenuOptions } from '../services/dailyMenuOptionsService'
 import { getExtras } from '../services/extraService'
 import { createOrder, CreateOrderInput } from '../services/orderService'
-import { DailyMenuItem, Extra, OrderLine } from '../types/menu'
+import { DailyMenuItem, DailyMenuOption, DailyMenuOptionAssignment, Extra, OrderLine } from '../types/menu'
 import { CustomProductDialog } from './CustomProductDialog'
 import { ExtrasDialog } from './ExtrasDialog'
 import { NewOrderSummary } from './NewOrderSummary'
 import { ProductCard } from './ProductCard'
+import { MenuCustomizationDialog } from './MenuCustomizationDialog'
 
 function getCurrentTime() {
   return new Date().toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -46,15 +48,18 @@ type AccountDraft = {
   quantities: Record<string, number>
   extraItems: OrderLine[]
   customItems: OrderLine[]
+  customizations: Record<string, CreateOrderCustomization[]>
 }
 
 function createAccount(menus: DailyMenuItem[], index: number): AccountDraft {
-  return { id: `account-${index}-${Date.now()}`, name: '', quantities: emptyQuantities(menus), extraItems: [], customItems: [] }
+  return { id: `account-${index}-${Date.now()}`, name: '', quantities: emptyQuantities(menus), extraItems: [], customItems: [], customizations: {} }
 }
 
 export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [menus, setMenus] = useState<DailyMenuItem[]>([])
   const [extras, setExtras] = useState<Extra[]>([])
+  const [dailyOptions, setDailyOptions] = useState<DailyMenuOption[]>([])
+  const [dailyAssignments, setDailyAssignments] = useState<DailyMenuOptionAssignment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [customerName, setCustomerName] = useState('')
@@ -73,9 +78,23 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
   const [accountErrorId, setAccountErrorId] = useState<string | null>(null)
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
   const [accountMenuAnchor, setAccountMenuAnchor] = useState<HTMLElement | null>(null)
+  const [customizationProduct, setCustomizationProduct] = useState<DailyMenuItem | null>(null)
   const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0]
+  const getCustomizationCharge = (product: DailyMenuItem, customizations: CreateOrderCustomization[]) => customizations.reduce((sum, customization) => {
+    const option = dailyOptions.find((candidate) => candidate.id === customization.dailyMenuOptionId)
+    if (!option) return sum
+    if (customization.action === 'REPLACED') {
+      const replaced = dailyOptions.find((candidate) => candidate.id === customization.replacesDailyMenuOptionId)
+      return sum + Math.max(0, option.price - (replaced?.price ?? option.price))
+    }
+    return sum + option.price * (customization.quantity ?? 1)
+  }, 0)
   const getAccountItems = (account: AccountDraft) => [
-    ...menus.filter((product) => (account.quantities[product.id] ?? 0) > 0).map((product) => ({ id: product.menuItemId, name: product.name, price: product.price, quantity: account.quantities[product.id] })),
+    ...menus.filter((product) => (account.quantities[product.id] ?? 0) > 0).map((product) => {
+      const quantity = account.quantities[product.id]
+      const customizations = account.customizations[product.id] ?? []
+      return { id: product.menuItemId, name: product.name, price: product.price + getCustomizationCharge(product, customizations) / quantity, quantity, customizations }
+    }),
     ...account.extraItems,
     ...account.customItems,
   ]
@@ -85,11 +104,13 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
     let cancelled = false
     setLoading(true)
     setError('')
-    Promise.all([getDailyMenu(), getExtras()])
-      .then(([dailyMenu, loadedExtras]) => {
+    Promise.all([getDailyMenu(), getExtras(), getDailyMenuOptions(getLocalDate(new Date()))])
+      .then(([dailyMenu, loadedExtras, loadedOptions]) => {
         if (cancelled) return
         setMenus(dailyMenu.items)
         setExtras(loadedExtras)
+        setDailyOptions(loadedOptions.options)
+        setDailyAssignments(loadedOptions.assignments)
         setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(dailyMenu.items) })))
         setActiveAccountId((current) => current || accounts[0]?.id || '')
       })
@@ -184,7 +205,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
         name: account.name.trim() || undefined,
         items: account.items.map((item) => {
           const menu = menus.find((product) => product.menuItemId === item.id)
-          if (menu) return { type: 'MENU' as const, menuItemId: menu.menuItemId, quantity: item.quantity }
+          if (menu) return { type: 'MENU' as const, menuItemId: menu.menuItemId, quantity: item.quantity, options: item.customizations }
           const extra = extras.find((product) => product.id === item.id)
           if (extra) return { type: 'EXTRA' as const, extraId: extra.id, quantity: item.quantity }
           return { type: 'CUSTOM' as const, description: item.name, unitPrice: item.price, quantity: item.quantity }
@@ -208,8 +229,10 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       setPromiseTime(nextPromise.time)
       setPromiseTimeError('')
       try {
-        const latestMenu = await getDailyMenu()
+        const [latestMenu, latestOptions] = await Promise.all([getDailyMenu(), getDailyMenuOptions(getLocalDate(new Date()))])
         setMenus(latestMenu.items)
+        setDailyOptions(latestOptions.options)
+        setDailyAssignments(latestOptions.assignments)
         setAccounts((current) => current.map((account) => ({ ...account, quantities: emptyQuantities(latestMenu.items) })))
         await onOrderCreated?.()
       } catch {
@@ -281,7 +304,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
                 })}
                 <Button size="small" startIcon={<PersonAddAltRounded />} onClick={addAccount} sx={{ minHeight: 36, px: 1.25, whiteSpace: 'nowrap', borderLeft: '1px solid', borderColor: 'divider', borderRadius: 0 }}>Nueva cuenta</Button>
               </Stack>
-              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={activeAccount?.quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
+              <Grid container spacing={1.5}>{menus.length > 0 ? menus.map((product) => <Grid item xs={12} sm={4} key={product.id}><ProductCard product={product} quantity={activeAccount?.quantities[product.id] ?? 0} onIncrease={() => changeQuantity(product, 1)} onDecrease={() => changeQuantity(product, -1)} onCustomize={dailyAssignments.some((assignment) => assignment.dailyMenuItemId === product.id) ? () => setCustomizationProduct(product) : undefined} /></Grid>) : <Grid item xs={12}><Typography color="text.secondary">No hay platillos disponibles para hoy.</Typography></Grid>}</Grid>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
                 <Card elevation={0} sx={{ flex: 1, border: '1px dashed', borderColor: 'primary.main', bgcolor: 'primary.light' }}>
                   <Button fullWidth size="large" startIcon={<AddCircleOutlineRounded />} onClick={() => setExtrasOpen(true)} disabled={!activeAccount} sx={{ minHeight: 64, fontWeight: 800 }}>Agregar extras</Button>
@@ -299,6 +322,7 @@ export function NewOrderView({ onOrderCreated }: NewOrderViewProps) {
       </Grid>
       <ExtrasDialog open={extrasOpen} extras={extras.filter((extra) => extra.active)} onClose={() => setExtrasOpen(false)} onConfirm={(items) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, extraItems: items } : account)); setAccountErrorId(null); setExtrasOpen(false); setNotification(null) }} />
       <CustomProductDialog open={customOpen} onClose={() => setCustomOpen(false)} onAdd={(item) => { if (activeAccount) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, customItems: [...account.customItems, item] } : account)); setAccountErrorId(null); setNotification(null) }} />
+      <MenuCustomizationDialog open={Boolean(customizationProduct)} product={customizationProduct} options={dailyOptions} assignments={dailyAssignments} onClose={() => setCustomizationProduct(null)} onSave={(customizations) => { if (activeAccount && customizationProduct) setAccounts((current) => current.map((account) => account.id === activeAccount.id ? { ...account, customizations: { ...account.customizations, [customizationProduct.id]: customizations } } : account)); setCustomizationProduct(null); setNotification(null) }} />
       <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)} aria-labelledby="clear-order-dialog-title">
         <DialogTitle id="clear-order-dialog-title">Limpiar pedido</DialogTitle>
         <DialogContent>

@@ -3,6 +3,7 @@ import { Alert, Box, CircularProgress, Grid } from '@mui/material'
 import { OrderDetail } from './components/OrderDetail'
 import { NewOrderView } from './components/NewOrderView'
 import { MenuManagementView } from './components/MenuManagementView'
+import { CatalogManagement } from './components/CatalogManagement'
 import { HomeView } from './components/HomeView'
 import { HistoryView } from './components/HistoryView'
 import { OrdersList } from './components/OrdersList'
@@ -88,7 +89,7 @@ function App() {
       <Sidebar activeSection={activeSection} onNavigate={handleNavigate} compact={activeSection === 'menu'} />
       {activeSection === 'menu' && <MenuSidebar selectedSection={menuSection} onSectionChange={setMenuSection} />}
       <Box component="main" sx={{ flex: 1, minWidth: 0, height: { xs: 'auto', md: '100dvh' }, overflowY: { xs: 'visible', md: 'auto' }, overflowX: 'hidden', p: { xs: 2, sm: 3, lg: 4 } }}>
-        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? <MenuManagementView section={menuSection} /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
+        {activeSection === 'history' ? <HistoryView /> : activeSection === 'home' ? <HomeView /> : activeSection === 'new-order' ? <NewOrderView onOrderCreated={loadOrders} /> : activeSection === 'menu' ? menuSection === 'Opciones' ? <CatalogManagement /> : <MenuManagementView section={menuSection} /> : ordersLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="primary" /></Box> : <>
           {ordersError && <Alert severity="error" onClose={() => setOrdersError('')} sx={{ mb: 2 }}>{ordersError}</Alert>}
           <Grid container spacing={{ xs: 3, lg: 4 }}>
           <Grid item xs={12} lg={8}>

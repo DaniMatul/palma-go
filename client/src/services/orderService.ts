@@ -1,5 +1,5 @@
 import { Order, OrderStatus } from '../types/order'
-import { apiRequest } from './api'
+import { ApiRequestError, apiRequest } from './api'
 
 type ApiOrderItem = {
   id: string
@@ -11,6 +11,7 @@ type ApiOrderItem = {
   menuItemId?: string | null
   extraId?: string | null
   orderAccountId?: string | null
+  options?: Array<{ id: string; action: 'INCLUDED' | 'REPLACED' | 'ADDED'; description: string; quantity: number; unitPrice: number | string; charge: number | string; replacedDescription?: string | null }>
 }
 
 type ApiOrderAccount = {
@@ -37,7 +38,7 @@ type ApiOrder = {
 }
 
 export type CreateOrderItemInput =
-  | { type: 'MENU'; menuItemId: string; quantity: number }
+  | { type: 'MENU'; menuItemId: string; quantity: number; options?: Array<{ dailyMenuOptionId: string; action?: 'REPLACED' | 'ADDED'; quantity?: number; replacesDailyMenuOptionId?: string }> }
   | { type: 'EXTRA'; extraId: string; quantity: number }
   | { type: 'CUSTOM'; description: string; unitPrice: number; quantity: number }
 
@@ -66,6 +67,7 @@ function normalizeOrder(order: ApiOrder): Order {
     quantity: item.quantity,
     price: Number(item.unitPrice),
     subtotal: Number(item.subtotal),
+    options: item.options?.map((option) => ({ ...option, unitPrice: Number(option.unitPrice), charge: Number(option.charge) })),
   })
   const items = order.items.map(normalizeItem)
   const accounts = order.accounts?.map((account) => ({
@@ -106,8 +108,25 @@ export async function getOrders(filters: OrderQuery = {}) {
 }
 
 export async function createOrder(input: CreateOrderInput) {
-  const order = await apiRequest<ApiOrder>('/orders', { method: 'POST', body: JSON.stringify(input) })
-  return normalizeOrder(order)
+  const idempotencyKey = crypto.randomUUID()
+  const maxAttempts = 3
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const order = await apiRequest<ApiOrder>('/orders', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(input),
+      })
+      return normalizeOrder(order)
+    } catch (error) {
+      const retryable = error instanceof ApiRequestError && (error.status === 0 || error.status >= 500)
+      if (!retryable || attempt === maxAttempts - 1) throw error
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+    }
+  }
+
+  throw new Error('No se pudo crear el pedido')
 }
 
 export async function updateOrderStatus(id: string, status: OrderStatus) {
